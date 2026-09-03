@@ -6,10 +6,11 @@ GDRIVE_SERVICE_ACCOUNT_KEY de Streamlit) y descarga/cachea en memoria todos los
 artefactos que el agente necesita: predicciones del día, informes de
 interpretabilidad, y el modelo predictivo serializado.
 
-Las funciones get_drive_service(), resolver_carpeta_drive(), buscar_archivo(),
-descargar_archivo() y subir_o_actualizar_archivo() son una copia literal de
-las de src/06_modelo_predictivo.py (raulruiz25/TFM-PRODUCCION), reutilizadas
-tal cual según pide el documento de contexto — no reescritas.
+Las funciones get_drive_service(), resolver_carpeta_drive(), buscar_archivo() y
+descargar_archivo() son una copia (con crear_si_falta=False al resolver
+carpetas, ya que este módulo solo lee) de las de src/06_modelo_predictivo.py
+(raulruiz25/TFM-PRODUCCION). subir_o_actualizar_archivo() no se incluye aquí
+porque el agente nunca escribe en Drive.
 """
 
 import io
@@ -22,13 +23,12 @@ import pandas as pd
 import streamlit as st
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseDownload
 
-DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive"]
+DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
 RUTA_BASE = ["TFM DATA SCIENCE", "data"]
 CARPETA_MODELADO = RUTA_BASE + ["PROCESSED - Modelado"]
-CARPETA_SEMANTICO = RUTA_BASE + ["PROCESSED - Analisis Semantico"]
 CARPETA_MODELO_SENTIMIENTO = RUTA_BASE + ["MODELS - Analisis Semantico"]
 
 ACTIVOS_CON_EVIDENCIA = ["IXIC", "XLE", "TSLA", "GSPC", "ETH-USD", "BTC-USD"]
@@ -91,22 +91,11 @@ def descargar_archivo(drive_service, file_id: str, destino: Path):
     destino.write_bytes(buffer.getvalue())
 
 
-def subir_o_actualizar_archivo(drive_service, ruta_local: Path, carpeta_id: str, nombre_archivo: str = None):
-    nombre_archivo = nombre_archivo or Path(ruta_local).name
-    media = MediaFileUpload(str(ruta_local), resumable=True)
-    existentes = drive_service.files().list(
-        q=f"name = '{nombre_archivo}' and '{carpeta_id}' in parents and trashed = false",
-        fields="files(id)"
-    ).execute().get("files", [])
-    if existentes:
-        drive_service.files().update(fileId=existentes[0]["id"], media_body=media).execute()
-    else:
-        metadata = {"name": nombre_archivo, "parents": [carpeta_id]}
-        drive_service.files().create(body=metadata, media_body=media, fields="id").execute()
-
-
 def _descargar_a_local(drive_service, ruta_carpeta: list, nombre_archivo: str, local_dir: Path) -> Path:
-    carpeta_id = resolver_carpeta_drive(drive_service, ruta_carpeta)
+    # crear_si_falta=False: el agente solo lee de Drive, nunca debe crear
+    # carpetas nuevas silenciosamente si algo no cuadra (a diferencia de
+    # los scripts de producción, que sí escriben y necesitan ese comportamiento).
+    carpeta_id = resolver_carpeta_drive(drive_service, ruta_carpeta, crear_si_falta=False)
     file_id = buscar_archivo(drive_service, carpeta_id, nombre_archivo)
     if file_id is None:
         raise FileNotFoundError(f"No se encontró '{nombre_archivo}' en la carpeta {' / '.join(ruta_carpeta)}.")
