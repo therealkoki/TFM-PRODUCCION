@@ -12,9 +12,13 @@ puede filtrar directamente dentro del panel, sin que el agente intervenga).
 import streamlit as st
 
 from carga_datos import ACTIVOS_CON_EVIDENCIA, cargar_modelo_sentimiento, cargar_todo
-from respuestas import generar_respuesta_pregunta_datos, generar_respuesta_simulacion
-from router_intencion import clasificar_mensaje, detectar_ticker
-from simulacion import analizar_comunicado_nuevo
+from respuestas import (
+    generar_respuesta_consulta_historica,
+    generar_respuesta_pregunta_datos,
+    generar_respuesta_simulacion,
+)
+from router_intencion import clasificar_mensaje, detectar_fecha, detectar_ticker
+from simulacion import analizar_comunicado_nuevo, consultar_dia_historico
 
 # URL real del dashboard (Historia 1, Tableau Public), con los parámetros
 # recomendados por Tableau para incrustar en un iframe (modo compacto, sin
@@ -32,6 +36,31 @@ TABLEAU_EMBED_URL = (
 
 def _pedir_ticker() -> str:
     return f"¿Sobre qué activo? Los disponibles son: {', '.join(ACTIVOS_CON_EVIDENCIA)}."
+
+
+def _pedir_fecha() -> str:
+    return "¿Qué fecha? (formato AAAA-MM-DD, por ejemplo 2025-04-09, o \"9 de abril de 2025\")"
+
+
+def _ejecutar_consulta_historica(ticker: str, fecha: str, datos: dict) -> str:
+    if datos.get("modelo_info") is None:
+        return ("No puedo consultar ese día ahora mismo: el modelo predictivo "
+                "(`modelo_evento_importante.pkl`) no está disponible en Drive todavía.")
+    if datos.get("dataset_modelado") is None:
+        return ("No puedo consultar ese día ahora mismo: `dataset_modelado.csv` "
+                "no está disponible en Drive todavía.")
+
+    try:
+        resultado = consultar_dia_historico(
+            ticker=ticker,
+            fecha=fecha,
+            dataset_modelado=datos["dataset_modelado"],
+            modelo_info=datos["modelo_info"],
+        )
+    except ValueError as e:
+        return str(e)
+
+    return generar_respuesta_consulta_historica(resultado)
 
 
 def _ejecutar_simulacion(texto: str, ticker: str, datos: dict) -> str:
@@ -87,6 +116,29 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict) -> str:
         st.session_state.pendiente = pendiente
         return "¿Cuál es el texto del comunicado que quieres analizar?"
 
+    # --- Continuación de una consulta histórica a la que le faltaba ticker o fecha ---
+    if pendiente and pendiente.get("tipo") == "consulta_historica":
+        if pendiente.get("ticker") is None:
+            ticker_detectado = detectar_ticker(mensaje_usuario)
+            if ticker_detectado is None:
+                texto_mayus = mensaje_usuario.strip().upper()
+                if texto_mayus in ACTIVOS_CON_EVIDENCIA:
+                    ticker_detectado = texto_mayus
+            pendiente["ticker"] = ticker_detectado
+        elif pendiente.get("fecha") is None:
+            pendiente["fecha"] = detectar_fecha(mensaje_usuario)
+
+        if pendiente.get("ticker") and pendiente.get("fecha"):
+            st.session_state.pendiente = None
+            return _ejecutar_consulta_historica(pendiente["ticker"], pendiente["fecha"], datos)
+
+        if pendiente.get("ticker") is None:
+            st.session_state.pendiente = pendiente
+            return _pedir_ticker()
+
+        st.session_state.pendiente = pendiente
+        return _pedir_fecha()
+
     # --- Mensaje nuevo: clasificar desde cero ---
     clasificacion = clasificar_mensaje(mensaje_usuario)
 
@@ -105,6 +157,22 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict) -> str:
         if texto is None:
             return "¿Cuál es el texto del comunicado que quieres analizar?"
         return _pedir_ticker()
+
+    if clasificacion["tipo"] == "consulta_historica":
+        ticker = clasificacion["ticker"]
+        fecha = clasificacion["fecha"]
+
+        if ticker and fecha:
+            return _ejecutar_consulta_historica(ticker, fecha, datos)
+
+        st.session_state.pendiente = {
+            "tipo": "consulta_historica",
+            "ticker": ticker,
+            "fecha": fecha,
+        }
+        if ticker is None:
+            return _pedir_ticker()
+        return _pedir_fecha()
 
     # --- Pregunta sobre datos ya existentes ---
     return generar_respuesta_pregunta_datos(mensaje_usuario, clasificacion, datos)
@@ -162,4 +230,3 @@ with col_chat:
                 respuesta = _procesar_mensaje(mensaje_usuario, datos)
             st.markdown(respuesta)
         st.session_state.historial.append(("assistant", respuesta))
-
