@@ -29,7 +29,13 @@ DRIVE_SCOPES = ["https://www.googleapis.com/auth/drive.readonly"]
 
 RUTA_BASE = ["TFM DATA SCIENCE", "data"]
 CARPETA_MODELADO = RUTA_BASE + ["PROCESSED - Modelado"]
+CARPETA_IMPACTO_MERCADOS = RUTA_BASE + ["PROCESSED - Impacto Mercados"]
 CARPETA_MODELO_SENTIMIENTO = RUTA_BASE + ["MODELS - Analisis Semantico"]
+
+# Variables sobre las que se comprueba si las condiciones de mercado del día
+# de una simulación están dentro de lo que el modelo vio durante el
+# entrenamiento (dataset_modelado.csv, congelado en el horizonte del TFM).
+VARIABLES_CHEQUEO_DISTRIBUCION = ["volatility_20d", "volume_zscore_20d", "log_return"]
 
 ACTIVOS_CON_EVIDENCIA = ["IXIC", "XLE", "TSLA", "GSPC", "ETH-USD", "BTC-USD"]
 
@@ -104,11 +110,39 @@ def _descargar_a_local(drive_service, ruta_carpeta: list, nombre_archivo: str, l
     return destino
 
 
+def _calcular_rangos_entrenamiento(dataset_modelado: pd.DataFrame) -> dict:
+    """
+    Calcula, por cada activo y por cada variable en VARIABLES_CHEQUEO_DISTRIBUCION,
+    el percentil 1 y el percentil 99 observados durante el horizonte de
+    entrenamiento (dataset_modelado.csv). Se usa luego para avisar si una
+    simulación se hace sobre condiciones de mercado que el modelo nunca vio
+    en un rango parecido durante el entrenamiento.
+
+    Se calcula por activo por separado (no de forma global) porque lo que es
+    "volatilidad alta" para el S&P 500 es normal para Bitcoin.
+    """
+    rangos = {}
+    for ticker, grupo in dataset_modelado.groupby("ticker"):
+        rangos[ticker] = {}
+        for variable in VARIABLES_CHEQUEO_DISTRIBUCION:
+            if variable in grupo.columns:
+                rangos[ticker][variable] = (
+                    float(grupo[variable].quantile(0.01)),
+                    float(grupo[variable].quantile(0.99)),
+                )
+    return rangos
+
+
 @st.cache_resource(show_spinner="Conectando con Google Drive...")
 def cargar_todo():
     """
     Descarga y devuelve en un único dict todos los artefactos que el agente necesita:
     - predicciones_hoy: DataFrame con la última predicción por activo (probabilidad, es_evento)
+    - dataset_modelado: histórico congelado del horizonte de estudio (para los
+      rangos de referencia del chequeo de fuera de distribución)
+    - dataset_consolidado_05: datos "en vivo" (sin corte de fecha), usado como
+      base real para las simulaciones de comunicados nuevos
+    - rangos_entrenamiento: dict {ticker: {variable: (p1, p99)}} calculado sobre dataset_modelado
     - informes: dict de DataFrames, uno por cada informe de interpretabilidad (sección 9 del cap. 6)
     - modelo_info: dict con el modelo LightGBM, columnas esperadas y umbral (joblib.load)
 
@@ -129,12 +163,24 @@ def cargar_todo():
         resultado["predicciones_hoy"] = None
         resultado["errores"].append(str(e))
 
-    # --- Dataset modelado completo (necesario para la simulación: última fila real por activo) ---
+    # --- Dataset modelado (congelado): solo se usa para los rangos de referencia ---
     try:
         ruta = _descargar_a_local(drive_service, CARPETA_MODELADO, "dataset_modelado.csv", local_dir)
         resultado["dataset_modelado"] = pd.read_csv(ruta)
+        resultado["rangos_entrenamiento"] = _calcular_rangos_entrenamiento(resultado["dataset_modelado"])
     except FileNotFoundError as e:
         resultado["dataset_modelado"] = None
+        resultado["rangos_entrenamiento"] = {}
+        resultado["errores"].append(str(e))
+
+    # --- Dataset consolidado del módulo 5 (en vivo, sin corte de fecha): base real de las simulaciones ---
+    try:
+        ruta = _descargar_a_local(
+            drive_service, CARPETA_IMPACTO_MERCADOS, "dataset_consolidado_05.csv", local_dir
+        )
+        resultado["dataset_consolidado_05"] = pd.read_csv(ruta, parse_dates=["date"])
+    except FileNotFoundError as e:
+        resultado["dataset_consolidado_05"] = None
         resultado["errores"].append(str(e))
 
     # --- Informes de interpretabilidad (capítulo 6, sección 9) ---
