@@ -73,17 +73,26 @@ def detectar_ticker(mensaje: str) -> str | None:
 def extraer_texto_comunicado(mensaje: str) -> str | None:
     """
     Intenta aislar el texto del comunicado a simular dentro del mensaje del
-    usuario: primero busca contenido entrecomillado, si no lo encuentra usa
-    lo que venga después de ':'.
+    usuario: primero busca contenido entre comillas dobles o comillas
+    angulares, si no lo encuentra usa lo que venga después de ':'.
+
+    IMPORTANTE: el apóstrofo (') NO se trata como delimitador de cierre, a
+    diferencia de una versión anterior de esta función — un apóstrofo normal
+    del inglés dentro del texto (p. ej. "World's Markets") cortaba el texto
+    a mitad de frase, perdiendo el resto del comunicado sin ningún aviso.
     """
-    coincidencia = re.search(r'["\'«]([^"\'»]{5,})["\'»]', mensaje)
+    coincidencia = re.search(r'["«]([^"»]{5,})["»]', mensaje)
+    if coincidencia:
+        return coincidencia.group(1).strip()
+
+    coincidencia = re.search(r"'([^']{5,})'", mensaje)
     if coincidencia:
         return coincidencia.group(1).strip()
 
     if ":" in mensaje:
         posible = mensaje.split(":", 1)[1].strip()
         if len(posible) >= 5:
-            return posible
+            return posible.strip('"\'«»')
 
     return None
 
@@ -124,3 +133,4 @@ def clasificar_mensaje(mensaje: str) -> dict:
         "ticker": ticker,
         "tema": detectar_tema_pregunta_datos(mensaje),
     }
+
