@@ -38,8 +38,9 @@ def _ejecutar_simulacion(texto: str, ticker: str, datos: dict) -> str:
     if datos.get("modelo_info") is None:
         return ("No puedo simular ahora mismo: el modelo predictivo (`modelo_evento_importante.pkl`) "
                 "no está disponible en Drive todavía.")
-    if datos.get("dataset_modelado") is None:
-        return "No puedo simular ahora mismo: `dataset_modelado.csv` no está disponible en Drive todavía."
+    if datos.get("dataset_consolidado_05") is None:
+        return ("No puedo simular ahora mismo: `dataset_consolidado_05.csv` "
+                "(condiciones de mercado actuales) no está disponible en Drive todavía.")
 
     with st.spinner("Cargando el modelo de sentimiento (puede tardar unos segundos la primera vez)..."):
         tokenizer, modelo_sentimiento = cargar_modelo_sentimiento()
@@ -48,10 +49,11 @@ def _ejecutar_simulacion(texto: str, ticker: str, datos: dict) -> str:
         resultado = analizar_comunicado_nuevo(
             texto=texto,
             ticker=ticker,
-            dataset_modelado=datos["dataset_modelado"],
+            dataset_consolidado_05=datos["dataset_consolidado_05"],
             tokenizer=tokenizer,
             modelo=modelo_sentimiento,
             modelo_info=datos["modelo_info"],
+            rangos_entrenamiento=datos.get("rangos_entrenamiento", {}),
         )
     except ValueError as e:
         return str(e)
@@ -160,3 +162,4 @@ with col_chat:
                 respuesta = _procesar_mensaje(mensaje_usuario, datos)
             st.markdown(respuesta)
         st.session_state.historial.append(("assistant", respuesta))
+
