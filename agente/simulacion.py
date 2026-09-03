@@ -15,11 +15,32 @@ Flujo:
    src/05_analisis_impacto_mercados.py, línea 609).
 4. Como es una única comunicación nueva (n=1): sentiment = sentimiento_continuo,
    intensidad_max = intensidad_media = abs(sentimiento_continuo), n_comunicaciones = 1.
-5. Se coge la última fila real de dataset_modelado.csv para el ticker indicado,
-   se sustituyen SOLO las 4 columnas de comunicación, y se llama a
-   predecir_evento_importante() con el resto de variables financieras intactas.
-6. Se compara la probabilidad antes (con los valores de comunicación reales del
-   último día) y después (con los del comunicado nuevo).
+5. Se coge la última fila de dataset_consolidado_05.csv (salida del módulo 5,
+   recalculada a diario SIN corte de fecha) para el ticker indicado — es decir,
+   las condiciones de mercado reales más recientes disponibles, no una fecha
+   fija del horizonte de entrenamiento. Los 10 lags (log_return/volatility de
+   1 a 5 días atrás) no vienen en ese CSV, así que se calculan aquí mismo con
+   la misma operación exacta que usa construir_dataset_modelado() en
+   src/06_modelo_predictivo.py (groupby("ticker").shift(lag)), sin su corte
+   de fecha (FECHA_FIN_TFM).
+6. Se sustituyen SOLO las 4 columnas de comunicación por las del comunicado
+   nuevo, y se llama a predecir_evento_importante() con el resto de variables
+   financieras (las reales, de hoy) intactas.
+7. Se compara la probabilidad antes (con las comunicaciones reales del día)
+   y después (con las del comunicado nuevo).
+8. Se comprueba si las condiciones de mercado de hoy caen fuera del rango
+   observado durante el entrenamiento (dataset_modelado.csv, congelado en el
+   horizonte del TFM) — si es así, se añade un aviso explícito de menor
+   fiabilidad, en vez de dar la predicción sin matizar.
+
+IMPORTANTE (léase antes de usar en la defensa): el MODELO sigue entrenado
+únicamente con datos hasta el corte del horizonte de estudio del TFM — lo que
+aquí se actualiza a diario son las variables de ENTRADA (condiciones de
+mercado), no los patrones aprendidos por el modelo. Es decir, se trata de
+inferencia con un modelo estático sobre datos nuevos, la forma estándar de
+desplegar cualquier modelo de ML en producción; la fiabilidad de cada
+predicción concreta depende de cuánto se parezcan esas condiciones nuevas,
+estadísticamente, a las que el modelo vio durante el entrenamiento.
 """
 
 import re
@@ -40,6 +61,9 @@ MENTION_PATTERN = re.compile(r"@\w+")
 FEATURES_COMUNICACION = ["sentiment", "intensidad_max", "intensidad_media", "n_comunicaciones"]
 
 ACTIVOS_CON_EVIDENCIA = ["IXIC", "XLE", "TSLA", "GSPC", "ETH-USD", "BTC-USD"]
+
+# Debe coincidir con VARIABLES_CHEQUEO_DISTRIBUCION de carga_datos.py.
+VARIABLES_CHEQUEO_DISTRIBUCION = ["volatility_20d", "volume_zscore_20d", "log_return"]
 
 
 def limpiar_texto_base(texto: str) -> str:
@@ -62,6 +86,76 @@ def preparar_texto(texto_original: str) -> str:
     texto_limpio = limpiar_texto_base(texto_original)
     texto_limpio = emoji.demojize(texto_limpio, language="es")
     return preprocesar_para_transformer(texto_limpio)
+
+
+def preparar_fila_base(dataset_consolidado_05: pd.DataFrame, ticker: str) -> dict:
+    """
+    Coge la última fila real de dataset_consolidado_05.csv (salida del módulo 5,
+    sin corte de fecha) para el ticker indicado, y le calcula los 10 lags que
+    ese CSV no trae de fábrica, con la misma operación que usa
+    construir_dataset_modelado() en src/06_modelo_predictivo.py — solo que
+    aquí SIN el corte FECHA_FIN_TFM, para poder usar el día más reciente real.
+    """
+    filas_ticker = dataset_consolidado_05[dataset_consolidado_05["ticker"] == ticker].copy()
+    if filas_ticker.empty:
+        raise ValueError(f"No hay filas de '{ticker}' en dataset_consolidado_05.csv.")
+
+    filas_ticker = filas_ticker.sort_values("date").reset_index(drop=True)
+
+    for lag in range(1, 6):
+        filas_ticker[f"log_return_lag{lag}"] = filas_ticker["log_return"].shift(lag)
+        filas_ticker[f"volatility_lag{lag}"] = filas_ticker["volatility_20d"].shift(lag)
+
+    for columna in FEATURES_COMUNICACION:
+        if columna in filas_ticker.columns:
+            filas_ticker[columna] = filas_ticker[columna].fillna(0)
+
+    ultima_fila = filas_ticker.iloc[-1]
+
+    # Si hay menos de 5 días de historial disponibles (caso extremo, no esperado
+    # en producción), los lags más antiguos saldrían NaN — se rellenan a 0 en
+    # vez de fallar, ya que el modelo espera siempre un valor numérico.
+    cols_lag = [c for c in filas_ticker.columns if "_lag" in c]
+    fila_dict = ultima_fila.to_dict()
+    for col in cols_lag:
+        if pd.isna(fila_dict.get(col)):
+            fila_dict[col] = 0.0
+
+    return fila_dict
+
+
+def comprobar_fuera_de_distribucion(fila: dict, ticker: str, rangos_entrenamiento: dict) -> str | None:
+    """
+    Compara las condiciones de mercado de 'fila' (el día que se va a usar en la
+    simulación) contra el rango [percentil 1, percentil 99] que tuvieron esas
+    mismas variables, PARA ESE MISMO ACTIVO, durante el horizonte de
+    entrenamiento (dataset_modelado.csv). Devuelve None si todo está dentro de
+    rango, o un texto de aviso explícito si alguna variable se sale.
+    """
+    rangos_ticker = rangos_entrenamiento.get(ticker) if rangos_entrenamiento else None
+    if not rangos_ticker:
+        return None
+
+    fuera_de_rango = []
+    for variable in VARIABLES_CHEQUEO_DISTRIBUCION:
+        if variable not in rangos_ticker or variable not in fila:
+            continue
+        p1, p99 = rangos_ticker[variable]
+        valor = fila[variable]
+        if pd.isna(valor):
+            continue
+        if valor < p1 or valor > p99:
+            fuera_de_rango.append(f"{variable}={valor:.4f} (rango visto en entrenamiento: [{p1:.4f}, {p99:.4f}])")
+
+    if not fuera_de_rango:
+        return None
+
+    return (
+        "Aviso: las condiciones de mercado actuales de " + ticker + " están fuera del rango "
+        "observado durante el entrenamiento del modelo — " + "; ".join(fuera_de_rango) +
+        ". Esta predicción tiene menor fiabilidad de lo habitual, ya que el modelo está "
+        "extrapolando fuera de lo que aprendió."
+    )
 
 
 def calcular_sentimiento(texto_original: str, tokenizer, modelo) -> dict:
@@ -92,16 +186,20 @@ def calcular_sentimiento(texto_original: str, tokenizer, modelo) -> dict:
     }
 
 
-def analizar_comunicado_nuevo(texto: str, ticker: str, dataset_modelado: pd.DataFrame,
-                               tokenizer, modelo, modelo_info: dict) -> dict:
+def analizar_comunicado_nuevo(texto: str, ticker: str, dataset_consolidado_05: pd.DataFrame,
+                               tokenizer, modelo, modelo_info: dict,
+                               rangos_entrenamiento: dict = None) -> dict:
     """
-    Pipeline completo: sentimiento del texto nuevo -> sustitución de columnas
-    de comunicación sobre la última fila real del activo -> predicción antes/después.
+    Pipeline completo: sentimiento del texto nuevo -> condiciones de mercado
+    reales más recientes (dataset_consolidado_05, sin corte de fecha) ->
+    sustitución de columnas de comunicación -> predicción antes/después ->
+    chequeo de fuera de distribución frente al horizonte de entrenamiento.
 
     Devuelve un dict con toda la información necesaria para que la capa de
     lenguaje natural (Gemini o plantilla) construya la respuesta, incluyendo
     el aviso de que esto es una lectura de sensibilidad del modelo, no una
-    predicción de mercado garantizada.
+    predicción de mercado garantizada, y el aviso de fuera de distribución
+    si aplica.
     """
     if ticker not in ACTIVOS_CON_EVIDENCIA:
         raise ValueError(
@@ -109,16 +207,7 @@ def analizar_comunicado_nuevo(texto: str, ticker: str, dataset_modelado: pd.Data
             f"Los disponibles son: {', '.join(ACTIVOS_CON_EVIDENCIA)}."
         )
 
-    filas_ticker = dataset_modelado[dataset_modelado["ticker"] == ticker].copy()
-    if filas_ticker.empty:
-        raise ValueError(f"No hay filas de '{ticker}' en dataset_modelado.csv.")
-
-    # dataset_modelado.csv ya viene ordenado por ["ticker", "date"] al construirse
-    # en construir_dataset_modelado() (src/06_modelo_predictivo.py), así que basta
-    # con coger la última fila de ese activo tal cual aparece.
-    if "date" in filas_ticker.columns:
-        filas_ticker = filas_ticker.sort_values("date")
-    ultima_fila_real = filas_ticker.iloc[-1].to_dict()
+    fila_base = preparar_fila_base(dataset_consolidado_05, ticker)
 
     resultado_sentimiento = calcular_sentimiento(texto, tokenizer, modelo)
     sentimiento_continuo = resultado_sentimiento["sentimiento_continuo"]
@@ -130,30 +219,37 @@ def analizar_comunicado_nuevo(texto: str, ticker: str, dataset_modelado: pd.Data
         "n_comunicaciones": 1,
     }
 
-    datos_antes = {k: v for k, v in ultima_fila_real.items() if k in modelo_info["feature_cols_originales"]}
+    datos_antes = {k: v for k, v in fila_base.items() if k in modelo_info["feature_cols_originales"]}
     datos_despues = dict(datos_antes)
     datos_despues.update(valores_comunicacion_nuevos)
 
     prediccion_antes = predecir_evento_importante(datos_antes, modelo_info)
     prediccion_despues = predecir_evento_importante(datos_despues, modelo_info)
 
+    aviso_distribucion = comprobar_fuera_de_distribucion(fila_base, ticker, rangos_entrenamiento or {})
+
     return {
         "ticker": ticker,
+        "fecha_datos_mercado": fila_base.get("date"),
         "texto_original": texto,
         "sentimiento": resultado_sentimiento,
-        "valores_comunicacion_reales_ultimo_dia": {k: ultima_fila_real.get(k) for k in FEATURES_COMUNICACION},
+        "valores_comunicacion_reales_ultimo_dia": {k: fila_base.get(k) for k in FEATURES_COMUNICACION},
         "valores_comunicacion_nuevos": valores_comunicacion_nuevos,
         "prediccion_antes": prediccion_antes,
         "prediccion_despues": prediccion_despues,
         "diferencia_probabilidad": round(
             prediccion_despues["probabilidad"] - prediccion_antes["probabilidad"], 4
         ),
+        "aviso_distribucion": aviso_distribucion,
         "aviso": (
             "Esto es una simulación de sensibilidad del modelo ante un comunicado nuevo, "
             "no una predicción real de mercado. El TFM descarta predecir la dirección del "
             "retorno (capítulo 6); esta cifra refleja únicamente cómo cambia la probabilidad "
             "de evento importante estimada por el modelo al variar las columnas de "
-            "comunicación, mantiendo el resto de variables financieras del último día real."
+            "comunicación, manteniendo las condiciones de mercado reales más recientes "
+            "disponibles. El modelo en sí sigue entrenado solo con datos hasta el horizonte "
+            "de estudio del TFM; esta predicción aplica esos patrones aprendidos a "
+            "condiciones de mercado actuales."
         ),
     }
 
@@ -174,3 +270,4 @@ def predecir_evento_importante(datos_nuevos: dict, modelo_info: dict) -> dict:
         "es_evento": bool(probabilidad >= umbral),
         "umbral_usado": umbral,
     }
+
