@@ -254,6 +254,66 @@ def analizar_comunicado_nuevo(texto: str, ticker: str, dataset_consolidado_05: p
     }
 
 
+def consultar_dia_historico(ticker: str, fecha: str, dataset_modelado: pd.DataFrame, modelo_info: dict) -> dict:
+    """
+    Consulta un día concreto YA CONOCIDO dentro del horizonte de estudio del
+    TFM (Modo A) — NO es una predicción nueva. Devuelve el hecho real tal
+    como quedó registrado en dataset_modelado.csv (evento_importante, is_anomaly),
+    y, como dato secundario, la probabilidad que el modelo le asigna a esa
+    misma fila.
+
+    IMPORTANTE — por qué esa probabilidad NO es una predicción genuina: el
+    modelo final (el que usa el agente) se entrena en src/06_modelo_predictivo.py
+    sobre el histórico COMPLETO (entrenar_modelo_final() usa X_full, no una
+    partición de test separada). Es decir, el modelo YA VIO este día durante
+    su entrenamiento. Preguntarle su probabilidad para un día que ya conoce
+    no demuestra capacidad predictiva — solo confirma ajuste interno. Por eso
+    esta función se llama "consultar", no "predecir", y el resultado se
+    etiqueta siempre con este matiz para no confundirlo con la simulación de
+    un comunicado nuevo (analizar_comunicado_nuevo), que sí es inferencia
+    genuina sobre condiciones que el modelo no vio durante el entrenamiento.
+    """
+    if ticker not in ACTIVOS_CON_EVIDENCIA:
+        raise ValueError(
+            f"'{ticker}' no es uno de los activos con evidencia suficiente. "
+            f"Los disponibles son: {', '.join(ACTIVOS_CON_EVIDENCIA)}."
+        )
+
+    filas = dataset_modelado[
+        (dataset_modelado["ticker"] == ticker) & (dataset_modelado["date"] == fecha)
+    ]
+    if filas.empty:
+        raise ValueError(
+            f"No hay datos de '{ticker}' para la fecha {fecha} en el horizonte de estudio del TFM "
+            f"(dataset_modelado.csv). Puede que esa fecha esté fuera del horizonte, o que ese día "
+            f"faltaran datos suficientes para calcular los lags."
+        )
+
+    fila = filas.iloc[0].to_dict()
+
+    datos_modelo = {k: v for k, v in fila.items() if k in modelo_info["feature_cols_originales"]}
+    prediccion = predecir_evento_importante(datos_modelo, modelo_info)
+
+    return {
+        "ticker": ticker,
+        "fecha": fecha,
+        "evento_importante_real": bool(fila.get("evento_importante")),
+        "is_anomaly_real": bool(fila.get("is_anomaly")),
+        "log_return_real": fila.get("log_return"),
+        "volatility_20d_real": fila.get("volatility_20d"),
+        "sentiment_real": fila.get("sentiment"),
+        "n_comunicaciones_real": fila.get("n_comunicaciones"),
+        "probabilidad_modelo": prediccion["probabilidad"],
+        "aviso": (
+            "Esto es una consulta de un hecho histórico ya registrado en el horizonte de estudio "
+            "del TFM, no una predicción nueva. La 'probabilidad del modelo' que se muestra es solo "
+            "una referencia de ajuste interno: el modelo final se entrenó sobre el histórico "
+            "completo, incluido este mismo día, así que ya lo conocía — esta cifra no demuestra "
+            "capacidad predictiva genuina, a diferencia de la simulación de un comunicado nuevo."
+        ),
+    }
+
+
 def predecir_evento_importante(datos_nuevos: dict, modelo_info: dict) -> dict:
     """Copia literal de predecir_evento_importante() en src/06_modelo_predictivo.py."""
     modelo = modelo_info["modelo"]
@@ -270,4 +330,5 @@ def predecir_evento_importante(datos_nuevos: dict, modelo_info: dict) -> dict:
         "es_evento": bool(probabilidad >= umbral),
         "umbral_usado": umbral,
     }
+
 
