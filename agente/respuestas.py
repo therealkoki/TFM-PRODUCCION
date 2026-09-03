@@ -88,6 +88,24 @@ Datos relevantes ({tema}):
 Responde directamente a la pregunta usando solo estos datos."""
 
 
+def _prompt_consulta_historica(resultado: dict) -> str:
+    return f"""Eres el asistente de un TFM de Data Science. Un usuario ha preguntado sobre un
+día histórico concreto, ya conocido, dentro del horizonte de estudio del TFM. NO es una
+predicción — es una consulta de un hecho ya registrado. Redacta la respuesta en español,
+clara y breve (máximo 4-5 frases), usando SOLO estos datos, sin inventar nada:
+
+Activo: {resultado['ticker']}
+Fecha: {resultado['fecha']}
+¿Hubo evento importante real ese día?: {"Sí" if resultado['evento_importante_real'] else "No"}
+¿Se detectó anomalía (autoencoder, capítulo 5)?: {"Sí" if resultado['is_anomaly_real'] else "No"}
+Retorno real ese día: {resultado['log_return_real']:.4f}
+Volatilidad (20d) ese día: {resultado['volatility_20d_real']:.4f}
+Sentimiento agregado de las comunicaciones ese día: {resultado['sentiment_real']:.4f} ({resultado['n_comunicaciones_real']} comunicaciones)
+Probabilidad que el modelo asigna a este día: {resultado['probabilidad_modelo']:.3f}
+
+Termina SIEMPRE la respuesta incluyendo, tal cual, este aviso: "{resultado['aviso']}\""""
+
+
 def _prompt_simulacion(resultado: dict) -> str:
     aviso_distribucion_texto = (
         f"\nAviso de fuera de distribución: {resultado['aviso_distribucion']}"
@@ -261,6 +279,24 @@ def generar_respuesta_pregunta_datos(mensaje_usuario: str, clasificacion: dict, 
         return texto_plantilla
 
 
+def generar_respuesta_consulta_historica(resultado: dict) -> str:
+    try:
+        return _llamar_gemini(_prompt_consulta_historica(resultado))
+    except Exception:
+        evento_texto = "SÍ hubo" if resultado["evento_importante_real"] else "NO hubo"
+        anomalia_texto = "sí se detectó anomalía (capítulo 5)" if resultado["is_anomaly_real"] else "no se detectó anomalía"
+        return (
+            f"El {resultado['fecha']}, {resultado['ticker']} — {evento_texto} un evento importante real "
+            f"ese día; {anomalia_texto}. Retorno: {resultado['log_return_real']:+.2%}, "
+            f"volatilidad (20d): {resultado['volatility_20d_real']:.2%}, con "
+            f"{resultado['n_comunicaciones_real']} comunicaciones ese día "
+            f"(sentimiento agregado: {resultado['sentiment_real']:+.3f}). "
+            f"Como referencia, el modelo asigna a este día una probabilidad de "
+            f"{resultado['probabilidad_modelo']:.1%}. "
+            f"{resultado['aviso']}"
+        )
+
+
 def generar_respuesta_simulacion(resultado: dict) -> str:
     try:
         return _llamar_gemini(_prompt_simulacion(resultado))
@@ -276,4 +312,5 @@ def generar_respuesta_simulacion(resultado: dict) -> str:
             f"{resultado['aviso']}"
             + (f" {aviso_distribucion}" if aviso_distribucion else "")
         )
+
 
