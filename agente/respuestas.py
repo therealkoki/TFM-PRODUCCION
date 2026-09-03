@@ -89,6 +89,10 @@ Responde directamente a la pregunta usando solo estos datos."""
 
 
 def _prompt_simulacion(resultado: dict) -> str:
+    aviso_distribucion_texto = (
+        f"\nAviso de fuera de distribución: {resultado['aviso_distribucion']}"
+        if resultado.get("aviso_distribucion") else ""
+    )
     return f"""Eres el asistente de un TFM de Data Science. Un usuario ha pedido analizar
 un comunicado (real o hipotético) sobre el activo {resultado['ticker']}. Ya se ha
 calculado todo lo necesario; tu único trabajo es redactar la respuesta en español,
@@ -99,7 +103,7 @@ Sentimiento detectado: {resultado['sentimiento']['etiqueta']} (prob. positiva={r
 Probabilidad de evento importante ANTES (con la comunicación real del último día): {resultado['prediccion_antes']['probabilidad']:.3f}
 Probabilidad de evento importante DESPUÉS (con este comunicado): {resultado['prediccion_despues']['probabilidad']:.3f}
 Diferencia: {resultado['diferencia_probabilidad']:+.3f}
-
+{aviso_distribucion_texto}
 Termina SIEMPRE la respuesta incluyendo, tal cual, este aviso: "{resultado['aviso']}\""""
 
 
@@ -262,6 +266,7 @@ def generar_respuesta_simulacion(resultado: dict) -> str:
         return _llamar_gemini(_prompt_simulacion(resultado))
     except Exception:
         s = resultado["sentimiento"]
+        aviso_distribucion = resultado.get("aviso_distribucion")
         return (
             f"Comunicado analizado sobre {resultado['ticker']}: sentimiento {s['etiqueta']} "
             f"(prob. positiva={s['prob_positive']:.3f}, prob. negativa={s['prob_negative']:.3f}). "
@@ -269,4 +274,6 @@ def generar_respuesta_simulacion(resultado: dict) -> str:
             f"Después de este comunicado: {resultado['prediccion_despues']['probabilidad']:.1%} "
             f"(diferencia: {resultado['diferencia_probabilidad']:+.1%}). "
             f"{resultado['aviso']}"
+            + (f" {aviso_distribucion}" if aviso_distribucion else "")
         )
+
