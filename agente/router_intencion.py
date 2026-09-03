@@ -38,6 +38,24 @@ PALABRAS_SIMULACION = [
     "nuevo tuit", "nuevo tweet", "nuevo comunicado",
 ]
 
+# Palabras que indican una consulta sobre un día histórico ya conocido (Modo A):
+# se responde con el hecho ya calculado (evento_importante, is_anomaly reales de
+# ese día), no con una predicción nueva del modelo. Se comprueba ANTES que
+# PALABRAS_SIMULACION en la clasificación de abajo solo si hay fecha en el
+# mensaje; si no hay fecha, no tiene sentido este tipo de consulta.
+PALABRAS_CONSULTA_HISTORICA = [
+    "qué volatilidad tuvo", "que volatilidad tuvo", "qué pasó el", "que paso el",
+    "hubo un evento", "hubo evento", "fue un evento importante", "fue evento importante",
+    "hubo anomalía", "hubo anomalia", "qué volatilidad hubo", "que volatilidad hubo",
+    "cómo reaccionó el mercado", "como reacciono el mercado",
+]
+
+MESES_ES = {
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+    "julio": 7, "agosto": 8, "septiembre": 9, "setiembre": 9, "octubre": 10,
+    "noviembre": 11, "diciembre": 12,
+}
+
 # Palabras clave -> qué informe consultar para responder una pregunta sobre datos ya existentes.
 TEMAS_PREGUNTA_DATOS = {
     "predicciones_hoy": ["predicción de hoy", "prediccion de hoy", "hoy predice", "qué predice", "que predice",
@@ -97,6 +115,28 @@ def extraer_texto_comunicado(mensaje: str) -> str | None:
     return None
 
 
+def detectar_fecha(mensaje: str) -> str | None:
+    """
+    Busca una fecha en el mensaje, en formato ISO (2025-04-09) o en formato
+    natural en español ("9 de abril de 2025"). Devuelve la fecha en formato
+    ISO (YYYY-MM-DD) o None si no encuentra ninguna.
+    """
+    coincidencia_iso = re.search(r"\b(\d{4})-(\d{2})-(\d{2})\b", mensaje)
+    if coincidencia_iso:
+        return coincidencia_iso.group(0)
+
+    coincidencia_natural = re.search(
+        r"\b(\d{1,2})\s+de\s+([a-záéíóú]+)\s+de\s+(\d{4})\b", mensaje.lower()
+    )
+    if coincidencia_natural:
+        dia, mes_texto, anio = coincidencia_natural.groups()
+        mes = MESES_ES.get(mes_texto)
+        if mes:
+            return f"{anio}-{mes:02d}-{int(dia):02d}"
+
+    return None
+
+
 def detectar_tema_pregunta_datos(mensaje: str) -> str | None:
     """Para preguntas sobre datos ya existentes, identifica a qué informe se refiere."""
     texto = mensaje.lower()
@@ -109,23 +149,42 @@ def detectar_tema_pregunta_datos(mensaje: str) -> str | None:
 def clasificar_mensaje(mensaje: str) -> dict:
     """
     Punto de entrada del router. Devuelve un dict con:
-    - tipo: "simulacion" | "pregunta_datos"
+    - tipo: "simulacion" | "consulta_historica" | "pregunta_datos"
     - ticker: ticker detectado o None (si es None, la app debe preguntar cuál)
     - texto_comunicado: solo si tipo == "simulacion"; puede ser None si no se
       pudo extraer, en cuyo caso la app debe pedir el texto explícitamente
+    - fecha: solo si tipo == "consulta_historica" (formato ISO YYYY-MM-DD);
+      puede ser None si no se detectó, en cuyo caso la app debe pedirla
     - tema: solo si tipo == "pregunta_datos"; puede ser None si no se identifica
       un informe concreto, en cuyo caso conviene responder con una visión general
+
+    Orden de comprobación: simulación primero (un mensaje de simulación puede
+    mencionar una fecha solo como metadato de cuándo se publicó originalmente
+    el comunicado — eso NO debe activar consulta_historica, que usa las
+    condiciones de mercado de esa fecha en vez de las de hoy). La consulta
+    histórica solo se activa si además hay palabras clave específicas de
+    "qué pasó ese día", no por la mera presencia de una fecha.
     """
     texto = mensaje.lower()
-    es_simulacion = any(palabra in texto for palabra in PALABRAS_SIMULACION)
-
     ticker = detectar_ticker(mensaje)
 
+    es_simulacion = any(palabra in texto for palabra in PALABRAS_SIMULACION)
     if es_simulacion:
         return {
             "tipo": "simulacion",
             "ticker": ticker,
             "texto_comunicado": extraer_texto_comunicado(mensaje),
+        }
+
+    fecha = detectar_fecha(mensaje)
+    es_consulta_historica = fecha is not None and any(
+        palabra in texto for palabra in PALABRAS_CONSULTA_HISTORICA
+    )
+    if es_consulta_historica:
+        return {
+            "tipo": "consulta_historica",
+            "ticker": ticker,
+            "fecha": fecha,
         }
 
     return {
