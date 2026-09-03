@@ -177,9 +177,7 @@ def clasificar_mensaje(mensaje: str) -> dict:
         }
 
     fecha = detectar_fecha(mensaje)
-    es_consulta_historica = fecha is not None and any(
-        palabra in texto for palabra in PALABRAS_CONSULTA_HISTORICA
-    )
+    es_consulta_historica = any(palabra in texto for palabra in PALABRAS_CONSULTA_HISTORICA)
     if es_consulta_historica:
         return {
             "tipo": "consulta_historica",
