@@ -296,51 +296,7 @@ if datos["errores"]:
         for error in datos["errores"]:
             st.write(f"- {error}")
 
-col_chat, col_dashboard = st.columns([3, 2])
-
-with col_dashboard:
-    tab_dashboard, tab_fuentes, tab_metodologia = st.tabs(["Dashboard", "Fuentes de datos", "Metodología"])
-
-    with tab_dashboard:
-        st.components.v1.iframe(TABLEAU_EMBED_URL, height=650, scrolling=True)
-
-    with tab_fuentes:
-        FUENTES = [
-            ("predicciones_hoy.csv", "Predicción diaria por activo (pipeline de producción)"),
-            ("dataset_consolidado_05.csv", "Condiciones de mercado en vivo, sin corte de fecha"),
-            ("dataset_modelado.csv", "Horizonte de entrenamiento congelado, usado como referencia"),
-            ("informe_shap_importancia.csv", "Importancia de variables (capítulo 6, sección 9.1)"),
-            ("informe_contribucion_familias.csv", "AUC por familia de variables (sección 9.2)"),
-            ("informe_auc_por_activo.csv", "AUC por activo (sección 9.3)"),
-            ("informe_comparacion_modelos.csv", "Comparación de modelos baseline (sección 6.1)"),
-            ("informe_cv_temporal.csv", "Validación cruzada temporal (sección 7)"),
-            ("modelo_evento_importante.pkl", "Modelo LightGBM serializado"),
-            ("twitter_roberta_finetuned.zip", "Modelo de sentimiento fine-tuned (capítulo 4)"),
-        ]
-        tarjetas_html = "".join(
-            f"""<div style="
-                    border: 1px solid #2D3340; border-radius: 8px;
-                    padding: 0.6rem 0.9rem; margin-bottom: 0.5rem;
-                    background-color: #161B26;
-                ">
-                <code style="color: #A78BFA; font-size: 0.85rem;">{nombre}</code>
-                <div style="color: #9CA3AF; font-size: 0.8rem; margin-top: 0.15rem;">{descripcion}</div>
-            </div>"""
-            for nombre, descripcion in FUENTES
-        )
-        st.markdown(f'<div style="margin-top: 0.5rem;">{tarjetas_html}</div>', unsafe_allow_html=True)
-
-    with tab_metodologia:
-        st.markdown(
-            "**Cómo funciona este agente**\n\n"
-            "Este agente audita la evidencia ya generada por el TFM — no predice el mercado. "
-            "El modelo predictivo (LightGBM) se entrenó sobre un horizonte histórico cerrado y "
-            "estima la probabilidad de un evento de volatilidad relevante, no la dirección del precio.\n\n"
-            "- **Consulta histórica**: reporta hechos ya registrados dentro del horizonte de estudio.\n"
-            "- **Simulación**: aplica el modelo, ya entrenado, a condiciones de mercado actuales "
-            "combinadas con el sentimiento de un comunicado nuevo.\n\n"
-            "En ambos casos, el modelo en sí permanece fijo — solo cambian los datos de entrada."
-        )
+col_chat, col_dashboard = st.columns([1, 1])
 
 with col_chat:
     conversacion = _conversacion_actual()
@@ -372,7 +328,8 @@ with col_chat:
         ("Financieras vs. comunicación", "¿Cuánto pesa el sentimiento frente a las variables financieras?"),
         ("¿Es robusto?", "¿Es un resultado robusto?"),
     ]
-    columnas_botones = st.columns(len(PREGUNTAS_RAPIDAS))
+    fila_1, fila_2 = st.columns(2), st.columns(2)
+    columnas_botones = fila_1 + fila_2
     for columna, (etiqueta, pregunta) in zip(columnas_botones, PREGUNTAS_RAPIDAS):
         with columna:
             if st.button(etiqueta, use_container_width=True, key=f"boton_{etiqueta}"):
@@ -387,6 +344,53 @@ with col_chat:
     if mensaje_usuario:
         _enviar_mensaje(mensaje_usuario)
         st.rerun()
+
+with col_dashboard:
+    tab_dashboard, tab_fuentes, tab_metodologia = st.tabs(["Dashboard", "Fuentes de datos", "Metodología"])
+
+    with tab_dashboard:
+        # Requiere que la Historia esté publicada con Tamaño = "Automático"
+        # en Tableau Desktop — con un tamaño fijo en píxeles, no cabe en una
+        # columna de la mitad del ancho de la página y se corta por los lados.
+        st.components.v1.iframe(TABLEAU_EMBED_URL, height=700, scrolling=True)
+
+    with tab_fuentes:
+        FUENTES = [
+            ("predicciones_hoy.csv", "Predicción diaria por activo (pipeline de producción)"),
+            ("dataset_consolidado_05.csv", "Condiciones de mercado en vivo, sin corte de fecha"),
+            ("dataset_modelado.csv", "Horizonte de entrenamiento congelado, usado como referencia"),
+            ("informe_shap_importancia.csv", "Importancia de variables (capítulo 6, sección 9.1)"),
+            ("informe_contribucion_familias.csv", "AUC por familia de variables (sección 9.2)"),
+            ("informe_auc_por_activo.csv", "AUC por activo (sección 9.3)"),
+            ("informe_comparacion_modelos.csv", "Comparación de modelos baseline (sección 6.1)"),
+            ("informe_cv_temporal.csv", "Validación cruzada temporal (sección 7)"),
+            ("modelo_evento_importante.pkl", "Modelo LightGBM serializado"),
+            ("twitter_roberta_finetuned.zip", "Modelo de sentimiento fine-tuned (capítulo 4)"),
+        ]
+        for nombre, descripcion in FUENTES:
+            st.markdown(
+                f"""<div style="
+                        border: 1px solid #2D3340; border-radius: 8px;
+                        padding: 0.6rem 0.9rem; margin-bottom: 0.5rem;
+                        background-color: #161B26;
+                    ">
+                    <code style="color: #A78BFA; font-size: 0.85rem;">{nombre}</code>
+                    <div style="color: #9CA3AF; font-size: 0.8rem; margin-top: 0.15rem;">{descripcion}</div>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+
+    with tab_metodologia:
+        st.markdown(
+            "**Cómo funciona este agente**\n\n"
+            "Este agente audita la evidencia ya generada por el TFM — no predice el mercado. "
+            "El modelo predictivo (LightGBM) se entrenó sobre un horizonte histórico cerrado y "
+            "estima la probabilidad de un evento de volatilidad relevante, no la dirección del precio.\n\n"
+            "- **Consulta histórica**: reporta hechos ya registrados dentro del horizonte de estudio.\n"
+            "- **Simulación**: aplica el modelo, ya entrenado, a condiciones de mercado actuales "
+            "combinadas con el sentimiento de un comunicado nuevo.\n\n"
+            "En ambos casos, el modelo en sí permanece fijo — solo cambian los datos de entrada."
+        )
 
 st.divider()
 st.markdown(
