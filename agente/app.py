@@ -90,8 +90,8 @@ def _ejecutar_simulacion(texto: str, ticker: str, datos: dict) -> str:
     return generar_respuesta_simulacion(resultado)
 
 
-def _procesar_mensaje(mensaje_usuario: str, datos: dict) -> str:
-    pendiente = st.session_state.pendiente
+def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict) -> str:
+    pendiente = conversacion["pendiente"]
 
     # --- Continuación de una simulación a la que le faltaba texto o ticker ---
     if pendiente and pendiente.get("tipo") == "simulacion":
@@ -106,14 +106,14 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict) -> str:
             pendiente["ticker"] = ticker_detectado
 
         if pendiente.get("texto_comunicado") and pendiente.get("ticker"):
-            st.session_state.pendiente = None
+            conversacion["pendiente"] = None
             return _ejecutar_simulacion(pendiente["texto_comunicado"], pendiente["ticker"], datos)
 
         if pendiente.get("ticker") is None:
-            st.session_state.pendiente = pendiente
+            conversacion["pendiente"] = pendiente
             return _pedir_ticker()
 
-        st.session_state.pendiente = pendiente
+        conversacion["pendiente"] = pendiente
         return "¿Cuál es el texto del comunicado que quieres analizar?"
 
     # --- Continuación de una consulta histórica a la que le faltaba ticker o fecha ---
@@ -129,14 +129,14 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict) -> str:
             pendiente["fecha"] = detectar_fecha(mensaje_usuario)
 
         if pendiente.get("ticker") and pendiente.get("fecha"):
-            st.session_state.pendiente = None
+            conversacion["pendiente"] = None
             return _ejecutar_consulta_historica(pendiente["ticker"], pendiente["fecha"], datos)
 
         if pendiente.get("ticker") is None:
-            st.session_state.pendiente = pendiente
+            conversacion["pendiente"] = pendiente
             return _pedir_ticker()
 
-        st.session_state.pendiente = pendiente
+        conversacion["pendiente"] = pendiente
         return _pedir_fecha()
 
     # --- Mensaje nuevo: clasificar desde cero ---
@@ -149,7 +149,7 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict) -> str:
         if texto and ticker:
             return _ejecutar_simulacion(texto, ticker, datos)
 
-        st.session_state.pendiente = {
+        conversacion["pendiente"] = {
             "tipo": "simulacion",
             "ticker": ticker,
             "texto_comunicado": texto,
@@ -165,7 +165,7 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict) -> str:
         if ticker and fecha:
             return _ejecutar_consulta_historica(ticker, fecha, datos)
 
-        st.session_state.pendiente = {
+        conversacion["pendiente"] = {
             "tipo": "consulta_historica",
             "ticker": ticker,
             "fecha": fecha,
@@ -179,25 +179,65 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict) -> str:
 
 
 # --------------------------------------------------------------------------
+# Estado multi-conversación (estilo ChatGPT): varias conversaciones
+# independientes, cada una con su propio historial y su propio estado
+# "pendiente" (para las simulaciones/consultas a medio completar).
+# --------------------------------------------------------------------------
+
+def _crear_conversacion() -> str:
+    st.session_state.contador_conversaciones += 1
+    id_nueva = f"conv_{st.session_state.contador_conversaciones}"
+    st.session_state.conversaciones[id_nueva] = {
+        "historial": [],
+        "pendiente": None,
+        "titulo": "Nueva conversación",
+    }
+    st.session_state.orden_conversaciones.append(id_nueva)
+    return id_nueva
+
+
+def _inicializar_estado():
+    if "conversaciones" not in st.session_state:
+        st.session_state.conversaciones = {}
+        st.session_state.orden_conversaciones = []
+        st.session_state.contador_conversaciones = 0
+        id_inicial = _crear_conversacion()
+        st.session_state.conversacion_activa = id_inicial
+
+
+def _conversacion_actual() -> dict:
+    return st.session_state.conversaciones[st.session_state.conversacion_activa]
+
+
+# --------------------------------------------------------------------------
 # Cuerpo principal del script (Streamlit ejecuta este fichero de arriba a
 # abajo en cada interacción, así que todo lo anterior ya está definido aquí)
 # --------------------------------------------------------------------------
 
 st.set_page_config(page_title="Agente TFM — Impacto de comunicaciones en mercados", layout="wide")
+_inicializar_estado()
 
-col_titulo, col_boton_reset = st.columns([5, 1])
-with col_titulo:
-    st.title("Agente del TFM: impacto de comunicaciones en mercados financieros")
-    st.caption(
-        "Auditor de la evidencia ya generada por el TFM — no un predictor de mercado. "
-        "Pregunta sobre los resultados ya calculados, o pídeme analizar un comunicado nuevo."
-    )
-with col_boton_reset:
-    st.write("")  # pequeño espaciador para alinear verticalmente el botón con el título
-    if st.button("🔄 Nueva conversación", use_container_width=True):
-        st.session_state.historial = []
-        st.session_state.pendiente = None
+st.title("Agente del TFM: impacto de comunicaciones en mercados financieros")
+st.caption(
+    "Auditor de la evidencia ya generada por el TFM — no un predictor de mercado. "
+    "Pregunta sobre los resultados ya calculados, o pídeme analizar un comunicado nuevo."
+)
+
+with st.sidebar:
+    st.subheader("💬 Conversaciones")
+    if st.button("➕ Nueva conversación", use_container_width=True):
+        st.session_state.conversacion_activa = _crear_conversacion()
         st.rerun()
+
+    st.divider()
+
+    for id_conv in reversed(st.session_state.orden_conversaciones):
+        conv = st.session_state.conversaciones[id_conv]
+        es_activa = id_conv == st.session_state.conversacion_activa
+        etiqueta = ("🟢 " if es_activa else "💬 ") + conv["titulo"]
+        if st.button(etiqueta, key=f"sel_{id_conv}", use_container_width=True):
+            st.session_state.conversacion_activa = id_conv
+            st.rerun()
 
 with st.spinner("Cargando datos del TFM desde Drive..."):
     datos = cargar_todo()
@@ -214,18 +254,19 @@ with col_dashboard:
     st.components.v1.iframe(TABLEAU_EMBED_URL, height=700, scrolling=True)
 
 with col_chat:
-    if "historial" not in st.session_state:
-        st.session_state.historial = []
-    if "pendiente" not in st.session_state:
-        st.session_state.pendiente = None
+    conversacion = _conversacion_actual()
 
     def _enviar_mensaje(mensaje: str):
-        st.session_state.historial.append(("user", mensaje))
+        conversacion["historial"].append(("user", mensaje))
+        # La primera vez que se manda un mensaje en una conversación nueva, se
+        # usa como título en el panel lateral (recortado), igual que hace ChatGPT.
+        if conversacion["titulo"] == "Nueva conversación":
+            conversacion["titulo"] = mensaje[:40] + ("…" if len(mensaje) > 40 else "")
         with st.spinner("Pensando..."):
-            respuesta = _procesar_mensaje(mensaje, datos)
-        st.session_state.historial.append(("assistant", respuesta))
+            respuesta = _procesar_mensaje(mensaje, datos, conversacion)
+        conversacion["historial"].append(("assistant", respuesta))
 
-    for autor, texto in st.session_state.historial:
+    for autor, texto in conversacion["historial"]:
         with st.chat_message(autor):
             st.markdown(texto)
 
