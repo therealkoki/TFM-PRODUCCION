@@ -25,6 +25,7 @@ import pandas as pd
 from router_intencion import ACTIVOS_CON_EVIDENCIA, ALIAS_ACTIVOS
 
 GEMINI_MODEL = "gemini-flash-latest"
+TIMEOUT_GEMINI_SEGUNDOS = 15
 
 AVISO_ENFOQUE = (
     "Este agente es un auditor de la evidencia ya generada por el TFM, no un predictor de "
@@ -57,7 +58,14 @@ def extraer_todos_los_tickers(mensaje: str) -> list:
 
 def _llamar_gemini(prompt: str) -> str:
     """Devuelve el texto de Gemini, o lanza una excepción si algo falla (la
-    capturamos siempre en el llamador para poder caer al fallback de plantilla)."""
+    capturamos siempre en el llamador para poder caer al fallback de plantilla).
+
+    Se fija un límite de tiempo explícito (TIMEOUT_GEMINI_SEGUNDOS) porque sin
+    él, si Gemini se queda esperando por un problema de red, la app se queda
+    "cargando" indefinidamente en vez de caer al fallback de plantilla como
+    está diseñado — el timeout convierte una espera indefinida en un fallo
+    rápido y controlado.
+    """
     import google.generativeai as genai
 
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -66,7 +74,9 @@ def _llamar_gemini(prompt: str) -> str:
 
     genai.configure(api_key=api_key)
     modelo = genai.GenerativeModel(GEMINI_MODEL)
-    respuesta = modelo.generate_content(prompt)
+    respuesta = modelo.generate_content(
+        prompt, request_options={"timeout": TIMEOUT_GEMINI_SEGUNDOS}
+    )
     texto = (respuesta.text or "").strip()
     if not texto:
         raise RuntimeError("Gemini devolvió una respuesta vacía.")
@@ -312,5 +322,3 @@ def generar_respuesta_simulacion(resultado: dict) -> str:
             f"{resultado['aviso']}"
             + (f" {aviso_distribucion}" if aviso_distribucion else "")
         )
-
-
