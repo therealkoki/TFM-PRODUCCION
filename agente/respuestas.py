@@ -96,6 +96,9 @@ Reglas estrictas:
   patrón, algo sorprendente o esperable) — como haría un analista real, no una plantilla.
 - Sé breve: 2-4 frases como máximo, salvo que los datos tengan varias partes claramente distintas que
   merezcan una frase cada una.
+- Formato: usa Markdown. Pon en **negrita** las cifras y nombres clave. Si comparas 3 o más elementos,
+  usa una lista con guiones en vez de una frase larga con comas. Empieza con un encabezado corto en
+  negrita que resuma el tema (p. ej. "**Predicción de hoy**").
 - No te presentes como un predictor de mercado: el TFM demuestra que la relación entre comunicaciones
   y mercado es modesta y heterogénea — encájalo con naturalidad si el tema lo pide, sin forzarlo.
 
@@ -117,6 +120,8 @@ Reglas estrictas:
 - Usa SOLO los datos que te paso abajo, sin inventar nada.
 - Cuenta primero el hecho (hubo o no evento, hubo o no anomalía) y solo después, con matiz, la
   probabilidad del modelo — nunca al revés.
+- Formato: usa Markdown. Un encabezado corto en negrita, y una lista con guiones para las cifras
+  clave (retorno, volatilidad, sentimiento, probabilidad del modelo).
 - Máximo 4-5 frases antes del aviso final obligatorio.
 - Termina SIEMPRE incluyendo, tal cual y sin parafrasear, este aviso: "{resultado['aviso']}"
 
@@ -145,6 +150,8 @@ Reglas estrictas:
 - Usa SOLO los datos que te paso abajo, sin inventar nada.
 - No te limites a repetir los números: señala si el cambio es grande o pequeño en su contexto (recuerda
   que la comunicación pesa poco frente a las variables financieras en este modelo), y qué dirección tomó.
+- Formato: usa Markdown. Un encabezado corto en negrita con el activo, y una lista con guiones para
+  sentimiento y probabilidad antes/después.
 - Máximo 3-4 frases antes del aviso final obligatorio.
 - Termina SIEMPRE incluyendo, tal cual y sin parafrasear, este aviso: "{resultado['aviso']}"
 
@@ -178,30 +185,33 @@ def _plantilla_predicciones_hoy(datos: dict, tickers: list) -> str:
 
     if len(filas) == 1:
         fila = filas[0]
+        estado = "**por encima**" if fila.get("es_evento") else "por debajo"
         return (
-            f"Hoy el modelo estima una probabilidad de evento importante del {fila['probabilidad']:.1%} "
-            f"para {fila['ticker']}, {'por encima' if fila.get('es_evento') else 'por debajo'} del "
-            f"umbral de decisión. {AVISO_ENFOQUE}"
+            f"**Predicción de hoy para {fila['ticker']}**\n\n"
+            f"Probabilidad de evento importante: **{fila['probabilidad']:.1%}** "
+            f"({estado} del umbral de decisión).\n\n{AVISO_ENFOQUE}"
         )
 
     ordenadas = sorted(filas, key=lambda f: f["probabilidad"], reverse=True)
     mas_alta, mas_baja = ordenadas[0], ordenadas[-1]
     activos_con_evento = [f["ticker"] for f in filas if f.get("es_evento")]
-
     calificativo = "bajas en general" if mas_alta["probabilidad"] < 0.3 else "dispares"
-    resumen = (
-        f"Hoy el modelo estima probabilidades de evento importante {calificativo} para los "
-        f"{len(filas)} activos consultados: la más alta es {mas_alta['ticker']} "
-        f"({mas_alta['probabilidad']:.1%}) y la más baja {mas_baja['ticker']} ({mas_baja['probabilidad']:.1%})."
-    )
-    if not activos_con_evento:
-        resumen += " Ninguna supera el umbral de decisión, así que no se prevé ningún evento hoy."
-    elif len(activos_con_evento) == 1:
-        resumen += f" {activos_con_evento[0]} sí supera el umbral de decisión hoy."
-    else:
-        resumen += f" {', '.join(activos_con_evento)} sí superan el umbral de decisión hoy."
 
-    return resumen + " " + AVISO_ENFOQUE
+    lineas = [f"- **{f['ticker']}**: {f['probabilidad']:.1%}" + (" ⚠️ *supera el umbral*" if f.get("es_evento") else "")
+              for f in ordenadas]
+
+    conclusion = (
+        "Ninguna supera el umbral de decisión, así que no se prevé ningún evento hoy."
+        if not activos_con_evento
+        else f"**{', '.join(activos_con_evento)}** sí supera{'n' if len(activos_con_evento) > 1 else ''} el umbral de decisión hoy."
+    )
+
+    return (
+        f"**Predicción de hoy** — probabilidades {calificativo} "
+        f"(la más alta: **{mas_alta['ticker']}** {mas_alta['probabilidad']:.1%}; "
+        f"la más baja: **{mas_baja['ticker']}** {mas_baja['probabilidad']:.1%})\n\n"
+        + "\n".join(lineas) + f"\n\n{conclusion}\n\n{AVISO_ENFOQUE}"
+    )
 
 
 def _plantilla_shap_importancia(datos: dict) -> str:
@@ -212,8 +222,8 @@ def _plantilla_shap_importancia(datos: dict) -> str:
     if "pct_del_total" not in df.columns:
         df["pct_del_total"] = df["importancia_media"] / df["importancia_media"].sum() * 100
     top5 = df.sort_values("importancia_media", ascending=False).head(5)
-    lineas = [f"{fila['variable']} ({fila['pct_del_total']:.1f}% del total)" for _, fila in top5.iterrows()]
-    return "Las variables con más peso en el modelo, según SHAP, son: " + ", ".join(lineas) + "."
+    lineas = [f"- **{fila['variable']}** — {fila['pct_del_total']:.1f}% del total" for _, fila in top5.iterrows()]
+    return "**Variables con más peso en el modelo (SHAP)**\n\n" + "\n".join(lineas)
 
 
 def _plantilla_contribucion_familias(datos: dict) -> str:
@@ -221,10 +231,10 @@ def _plantilla_contribucion_familias(datos: dict) -> str:
     if df is None:
         return "El informe de contribución por familias todavía no está disponible."
     if "n_features" in df.columns:
-        lineas = [f"{fila['familia']}: AUC={fila['auc']:.3f} ({fila['n_features']} variables)" for _, fila in df.iterrows()]
+        lineas = [f"- **{fila['familia']}**: AUC = {fila['auc']:.3f} ({fila['n_features']} variables)" for _, fila in df.iterrows()]
     else:
-        lineas = [f"{fila['familia']}: AUC={fila['auc']:.3f}" for _, fila in df.iterrows()]
-    return "Comparación de AUC según las variables usadas: " + "; ".join(lineas) + "."
+        lineas = [f"- **{fila['familia']}**: AUC = {fila['auc']:.3f}" for _, fila in df.iterrows()]
+    return "**Contribución por familia de variables**\n\n" + "\n".join(lineas)
 
 
 def _plantilla_auc_por_activo(datos: dict, tickers: list) -> str:
@@ -239,12 +249,12 @@ def _plantilla_auc_por_activo(datos: dict, tickers: list) -> str:
             continue
         fila = fila.iloc[0]
         lineas.append(
-            f"{ticker}: solo financieras AUC={fila['auc_financieras']:.3f}, "
-            f"solo comunicación AUC={fila['auc_comunicacion']:.3f}, ambas AUC={fila['auc_ambas']:.3f}"
+            f"- **{ticker}**: solo financieras {fila['auc_financieras']:.3f} · "
+            f"solo comunicación {fila['auc_comunicacion']:.3f} · ambas **{fila['auc_ambas']:.3f}**"
         )
     if not lineas:
         return "No encontré AUC por activo para lo que preguntas."
-    return "; ".join(lineas) + ". " + AVISO_ENFOQUE
+    return "**AUC por activo**\n\n" + "\n".join(lineas) + f"\n\n{AVISO_ENFOQUE}"
 
 
 def _plantilla_comparacion_modelos(datos: dict) -> str:
@@ -252,8 +262,8 @@ def _plantilla_comparacion_modelos(datos: dict) -> str:
     if df is None:
         return "El informe de comparación de modelos todavía no está disponible."
     df = df.sort_values("auc", ascending=False)
-    lineas = [f"{fila['modelo']}: AUC={fila['auc']:.3f}, F1={fila['f1']:.3f}" for _, fila in df.iterrows()]
-    return "Comparación de modelos baseline (ordenados por AUC): " + "; ".join(lineas) + "."
+    lineas = [f"- **{fila['modelo']}**: AUC = {fila['auc']:.3f}, F1 = {fila['f1']:.3f}" for _, fila in df.iterrows()]
+    return "**Comparación de modelos baseline** (ordenados por AUC)\n\n" + "\n".join(lineas)
 
 
 def _plantilla_cv_temporal(datos: dict) -> str:
@@ -262,11 +272,13 @@ def _plantilla_cv_temporal(datos: dict) -> str:
         return "El informe de validación cruzada temporal todavía no está disponible."
     df = df.sort_values("auc_medio", ascending=False)
     lineas = [
-        f"{fila['modelo']}: AUC medio={fila['auc_medio']:.3f} (±{fila['auc_std']:.3f}, {int(fila['n_splits_validos'])} splits)"
+        f"- **{fila['modelo']}**: AUC medio = {fila['auc_medio']:.3f} (±{fila['auc_std']:.3f}, {int(fila['n_splits_validos'])} splits)"
         for _, fila in df.iterrows()
     ]
-    return ("Resultados de validación cruzada temporal (5 splits): " + "; ".join(lineas) +
-            ". El resultado depende del modelo usado, no es igual de robusto en todos los casos.")
+    return (
+        "**Validación cruzada temporal** (5 splits)\n\n" + "\n".join(lineas) +
+        "\n\nEl resultado depende del modelo usado — no es igual de robusto en todos los casos."
+    )
 
 
 def _plantilla_matriz_confusion(datos: dict) -> str:
@@ -274,20 +286,23 @@ def _plantilla_matriz_confusion(datos: dict) -> str:
     if df is None:
         return "El informe de matriz de confusión por umbrales todavía no está disponible."
     lineas = [
-        f"umbral {fila['umbral']}: precisión={fila['precision']:.2f}, recall={fila['recall']:.2f} "
+        f"- **Umbral {fila['umbral']}**: precisión = {fila['precision']:.2f}, recall = {fila['recall']:.2f} "
         f"(TP={int(fila['TP'])}, FP={int(fila['FP'])}, FN={int(fila['FN'])}, TN={int(fila['TN'])})"
         for _, fila in df.iterrows()
     ]
-    return "Matriz de confusión según el umbral de decisión: " + "; ".join(lineas) + "."
+    return "**Matriz de confusión según el umbral de decisión**\n\n" + "\n".join(lineas)
 
 
 def _plantilla_general() -> str:
     return (
-        "Puedo ayudarte con datos ya calculados del TFM: la predicción de hoy para un activo, "
-        "qué variables pesan más (SHAP), cuánto aporta el sentimiento frente a las variables "
-        "financieras, cómo varía el AUC entre activos, qué modelo funciona mejor, o si el "
-        "resultado es robusto en el tiempo. También puedo analizar un comunicado nuevo si me "
-        "lo pegas (indicando el activo). " + AVISO_ENFOQUE
+        "Puedo ayudarte con esto:\n\n"
+        "- **Predicción de hoy** para un activo\n"
+        "- **Variables importantes** (SHAP)\n"
+        "- **Financieras vs. comunicación** (cuánto aporta cada una)\n"
+        "- **Comparación de modelos** y **robustez** en el tiempo\n"
+        "- **Analizar un comunicado nuevo** (dime el texto y el activo)\n"
+        "- **Consultar un día histórico concreto** dentro del horizonte del TFM\n\n"
+        + AVISO_ENFOQUE
     )
 
 
@@ -336,16 +351,16 @@ def generar_respuesta_consulta_historica(resultado: dict) -> str:
     try:
         return _llamar_gemini(_prompt_consulta_historica(resultado))
     except Exception:
-        evento_texto = "SÍ hubo" if resultado["evento_importante_real"] else "NO hubo"
-        anomalia_texto = "sí se detectó anomalía (capítulo 5)" if resultado["is_anomaly_real"] else "no se detectó anomalía"
+        evento_texto = "✅ **SÍ** hubo" if resultado["evento_importante_real"] else "❌ **NO** hubo"
+        anomalia_texto = "**sí** se detectó anomalía (capítulo 5)" if resultado["is_anomaly_real"] else "no se detectó anomalía"
         return (
-            f"El {resultado['fecha']}, {resultado['ticker']} — {evento_texto} un evento importante real "
-            f"ese día; {anomalia_texto}. Retorno: {resultado['log_return_real']:+.2%}, "
-            f"volatilidad (20d): {resultado['volatility_20d_real']:.2%}, con "
-            f"{resultado['n_comunicaciones_real']} comunicaciones ese día "
-            f"(sentimiento agregado: {resultado['sentiment_real']:+.3f}). "
-            f"Como referencia, el modelo asigna a este día una probabilidad de "
-            f"{resultado['probabilidad_modelo']:.1%}. "
+            f"**Consulta histórica — {resultado['ticker']}, {resultado['fecha']}**\n\n"
+            f"{evento_texto} un evento importante real ese día; {anomalia_texto}.\n\n"
+            f"- Retorno: **{resultado['log_return_real']:+.2%}**\n"
+            f"- Volatilidad (20d): **{resultado['volatility_20d_real']:.2%}**\n"
+            f"- Comunicaciones ese día: **{resultado['n_comunicaciones_real']}** "
+            f"(sentimiento agregado: {resultado['sentiment_real']:+.3f})\n"
+            f"- Probabilidad de referencia del modelo: **{resultado['probabilidad_modelo']:.1%}**\n\n"
             f"{resultado['aviso']}"
         )
 
@@ -357,11 +372,13 @@ def generar_respuesta_simulacion(resultado: dict) -> str:
         s = resultado["sentimiento"]
         aviso_distribucion = resultado.get("aviso_distribucion")
         return (
-            f"Comunicado analizado sobre {resultado['ticker']}: sentimiento {s['etiqueta']} "
-            f"(prob. positiva={s['prob_positive']:.3f}, prob. negativa={s['prob_negative']:.3f}). "
-            f"Probabilidad de evento importante antes: {resultado['prediccion_antes']['probabilidad']:.1%}. "
-            f"Después de este comunicado: {resultado['prediccion_despues']['probabilidad']:.1%} "
-            f"(diferencia: {resultado['diferencia_probabilidad']:+.1%}). "
+            f"**Simulación — {resultado['ticker']}**\n\n"
+            f"*\"{resultado['texto_original']}\"*\n\n"
+            f"- Sentimiento detectado: **{s['etiqueta']}** "
+            f"(positiva {s['prob_positive']:.3f} · negativa {s['prob_negative']:.3f})\n"
+            f"- Probabilidad de evento importante — antes: **{resultado['prediccion_antes']['probabilidad']:.1%}** "
+            f"→ después: **{resultado['prediccion_despues']['probabilidad']:.1%}** "
+            f"({resultado['diferencia_probabilidad']:+.1%})\n\n"
             f"{resultado['aviso']}"
-            + (f" {aviso_distribucion}" if aviso_distribucion else "")
+            + (f"\n\n{aviso_distribucion}" if aviso_distribucion else "")
         )
