@@ -211,9 +211,32 @@ with col_chat:
     if "pendiente" not in st.session_state:
         st.session_state.pendiente = None
 
+    def _enviar_mensaje(mensaje: str):
+        st.session_state.historial.append(("user", mensaje))
+        with st.spinner("Pensando..."):
+            respuesta = _procesar_mensaje(mensaje, datos)
+        st.session_state.historial.append(("assistant", respuesta))
+
     for autor, texto in st.session_state.historial:
         with st.chat_message(autor):
             st.markdown(texto)
+
+    # Botones de acceso rápido: solo antes del primer mensaje, para no quitar
+    # espacio al historial de la conversación una vez ya ha empezado.
+    if not st.session_state.historial:
+        st.caption("Preguntas rápidas:")
+        PREGUNTAS_RAPIDAS = [
+            ("📊 Predicción de hoy", "¿Qué predice hoy el modelo?"),
+            ("🔍 Variables importantes", "¿Qué variables pesan más según SHAP?"),
+            ("⚖️ Financieras vs. comunicación", "¿Cuánto pesa el sentimiento frente a las variables financieras?"),
+            ("✅ ¿Es robusto?", "¿Es un resultado robusto?"),
+        ]
+        columnas_botones = st.columns(len(PREGUNTAS_RAPIDAS))
+        for columna, (etiqueta, pregunta) in zip(columnas_botones, PREGUNTAS_RAPIDAS):
+            with columna:
+                if st.button(etiqueta, use_container_width=True):
+                    _enviar_mensaje(pregunta)
+                    st.rerun()
 
     mensaje_usuario = st.chat_input(
         f"Pregunta sobre los resultados, o pide simular un comunicado "
@@ -221,12 +244,5 @@ with col_chat:
     )
 
     if mensaje_usuario:
-        st.session_state.historial.append(("user", mensaje_usuario))
-        with st.chat_message("user"):
-            st.markdown(mensaje_usuario)
-
-        with st.chat_message("assistant"):
-            with st.spinner("Pensando..."):
-                respuesta = _procesar_mensaje(mensaje_usuario, datos)
-            st.markdown(respuesta)
-        st.session_state.historial.append(("assistant", respuesta))
+        _enviar_mensaje(mensaje_usuario)
+        st.rerun()
