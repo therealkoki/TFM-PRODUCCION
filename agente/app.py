@@ -24,7 +24,7 @@ from simulacion import analizar_comunicado_nuevo, consultar_dia_historico
 # recomendados por Tableau para incrustar en un iframe (modo compacto, sin
 # la barra de navegación de Tableau Public alrededor).
 TABLEAU_EMBED_URL = (
-    "https://public.tableau.com/views/DashboardTFM-ImpactoComunicacionesenMercados/Historia1"
+    "https://public.tableau.com/views/DashboardTFM-ImpactoComunicacionesenMercados/Resultadosdelmodelo"
     "?:language=en-GB&:showVizHome=no&:embed=y"
 )
 
@@ -402,4 +402,5 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
