@@ -221,22 +221,21 @@ with col_chat:
         with st.chat_message(autor):
             st.markdown(texto)
 
-    # Botones de acceso rápido: solo antes del primer mensaje, para no quitar
-    # espacio al historial de la conversación una vez ya ha empezado.
-    if not st.session_state.historial:
-        st.caption("Preguntas rápidas:")
-        PREGUNTAS_RAPIDAS = [
-            ("📊 Predicción de hoy", "¿Qué predice hoy el modelo?"),
-            ("🔍 Variables importantes", "¿Qué variables pesan más según SHAP?"),
-            ("⚖️ Financieras vs. comunicación", "¿Cuánto pesa el sentimiento frente a las variables financieras?"),
-            ("✅ ¿Es robusto?", "¿Es un resultado robusto?"),
-        ]
-        columnas_botones = st.columns(len(PREGUNTAS_RAPIDAS))
-        for columna, (etiqueta, pregunta) in zip(columnas_botones, PREGUNTAS_RAPIDAS):
-            with columna:
-                if st.button(etiqueta, use_container_width=True):
-                    _enviar_mensaje(pregunta)
-                    st.rerun()
+    # Botones de acceso rápido: siempre visibles, no solo al principio, para
+    # poder lanzar una pregunta rápida en cualquier punto de la conversación.
+    st.caption("Preguntas rápidas:")
+    PREGUNTAS_RAPIDAS = [
+        ("📊 Predicción de hoy", "¿Qué predice hoy el modelo?"),
+        ("🔍 Variables importantes", "¿Qué variables pesan más según SHAP?"),
+        ("⚖️ Financieras vs. comunicación", "¿Cuánto pesa el sentimiento frente a las variables financieras?"),
+        ("✅ ¿Es robusto?", "¿Es un resultado robusto?"),
+    ]
+    columnas_botones = st.columns(len(PREGUNTAS_RAPIDAS))
+    for columna, (etiqueta, pregunta) in zip(columnas_botones, PREGUNTAS_RAPIDAS):
+        with columna:
+            if st.button(etiqueta, use_container_width=True, key=f"boton_{etiqueta}"):
+                _enviar_mensaje(pregunta)
+                st.rerun()
 
     mensaje_usuario = st.chat_input(
         f"Pregunta sobre los resultados, o pide simular un comunicado "
