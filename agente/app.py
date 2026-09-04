@@ -214,14 +214,19 @@ def _conversacion_actual() -> dict:
 # abajo en cada interacción, así que todo lo anterior ya está definido aquí)
 # --------------------------------------------------------------------------
 
-st.set_page_config(page_title="Agente TFM — Impacto de comunicaciones en mercados", layout="wide")
+st.set_page_config(
+    page_title="Agente TFM — Impacto de comunicaciones en mercados",
+    page_icon="📈",
+    layout="wide",
+)
 _inicializar_estado()
 
-st.title("Agente del TFM: impacto de comunicaciones en mercados financieros")
+st.title("📈 Agente del TFM: impacto de comunicaciones en mercados financieros")
 st.caption(
     "Auditor de la evidencia ya generada por el TFM — no un predictor de mercado. "
     "Pregunta sobre los resultados ya calculados, o pídeme analizar un comunicado nuevo."
 )
+st.divider()
 
 with st.sidebar:
     st.subheader("💬 Conversaciones")
@@ -250,7 +255,7 @@ if datos["errores"]:
 col_chat, col_dashboard = st.columns([3, 2])
 
 with col_dashboard:
-    st.subheader("Dashboard")
+    st.subheader("📊 Dashboard")
     st.components.v1.iframe(TABLEAU_EMBED_URL, height=700, scrolling=True)
 
 with col_chat:
@@ -272,7 +277,8 @@ with col_chat:
 
     # Botones de acceso rápido: siempre visibles, no solo al principio, para
     # poder lanzar una pregunta rápida en cualquier punto de la conversación.
-    st.caption("Preguntas rápidas:")
+    st.divider()
+    st.caption("💡 Preguntas rápidas:")
     PREGUNTAS_RAPIDAS = [
         ("📊 Predicción de hoy", "¿Qué predice hoy el modelo?"),
         ("🔍 Variables importantes", "¿Qué variables pesan más según SHAP?"),
@@ -294,3 +300,4 @@ with col_chat:
     if mensaje_usuario:
         _enviar_mensaje(mensaje_usuario)
         st.rerun()
+
