@@ -216,12 +216,31 @@ def _conversacion_actual() -> dict:
 
 st.set_page_config(
     page_title="Agente TFM — Impacto de comunicaciones en mercados",
-    page_icon="📈",
+    page_icon=None,
     layout="wide",
 )
 _inicializar_estado()
 
-st.title("📈 Agente del TFM: impacto de comunicaciones en mercados financieros")
+# Retoque visual ligero: bordes redondeados en botones y burbujas del chat.
+# NOTA: usa clases internas de Streamlit (data-testid), que pueden cambiar
+# entre versiones — si un futuro upgrade de Streamlit rompe este estilo, no
+# afecta a la funcionalidad del agente, solo a este detalle visual.
+st.markdown(
+    """
+    <style>
+    button[kind="primary"], button[kind="secondary"] {
+        border-radius: 10px !important;
+    }
+    div[data-testid="stChatMessage"] {
+        border-radius: 12px;
+        padding: 0.5rem 0.25rem;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.title("Agente del TFM: impacto de comunicaciones en mercados financieros")
 st.caption(
     "Auditor de la evidencia ya generada por el TFM — no un predictor de mercado. "
     "Pregunta sobre los resultados ya calculados, o pídeme analizar un comunicado nuevo."
@@ -229,8 +248,8 @@ st.caption(
 st.divider()
 
 with st.sidebar:
-    st.subheader("💬 Conversaciones")
-    if st.button("➕ Nueva conversación", use_container_width=True):
+    st.subheader("Conversaciones")
+    if st.button("Nueva conversación", use_container_width=True, type="primary"):
         st.session_state.conversacion_activa = _crear_conversacion()
         st.rerun()
 
@@ -239,24 +258,58 @@ with st.sidebar:
     for id_conv in reversed(st.session_state.orden_conversaciones):
         conv = st.session_state.conversaciones[id_conv]
         es_activa = id_conv == st.session_state.conversacion_activa
-        etiqueta = ("🟢 " if es_activa else "💬 ") + conv["titulo"]
-        if st.button(etiqueta, key=f"sel_{id_conv}", use_container_width=True):
+        if st.button(
+            conv["titulo"], key=f"sel_{id_conv}", use_container_width=True,
+            type="primary" if es_activa else "secondary",
+        ):
             st.session_state.conversacion_activa = id_conv
             st.rerun()
+
+    st.divider()
+    st.caption("TFM — Impacto de comunicaciones públicas en mercados financieros")
 
 with st.spinner("Cargando datos del TFM desde Drive..."):
     datos = cargar_todo()
 
 if datos["errores"]:
-    with st.expander("⚠ Algunos archivos no se pudieron cargar (el agente seguirá funcionando con lo disponible)"):
+    with st.expander("Algunos archivos no se pudieron cargar (el agente seguirá funcionando con lo disponible)"):
         for error in datos["errores"]:
             st.write(f"- {error}")
 
 col_chat, col_dashboard = st.columns([3, 2])
 
 with col_dashboard:
-    st.subheader("📊 Dashboard")
-    st.components.v1.iframe(TABLEAU_EMBED_URL, height=700, scrolling=True)
+    tab_dashboard, tab_fuentes, tab_metodologia = st.tabs(["Dashboard", "Fuentes de datos", "Metodología"])
+
+    with tab_dashboard:
+        st.components.v1.iframe(TABLEAU_EMBED_URL, height=650, scrolling=True)
+
+    with tab_fuentes:
+        st.markdown(
+            "**Datos que usa este agente**\n\n"
+            "- `predicciones_hoy.csv` — predicción diaria por activo (pipeline de producción)\n"
+            "- `dataset_consolidado_05.csv` — condiciones de mercado en vivo, sin corte de fecha\n"
+            "- `dataset_modelado.csv` — horizonte de entrenamiento congelado, usado como referencia\n"
+            "- `informe_shap_importancia.csv` — importancia de variables (capítulo 6, sección 9.1)\n"
+            "- `informe_contribucion_familias.csv` — AUC por familia de variables (sección 9.2)\n"
+            "- `informe_auc_por_activo.csv` — AUC por activo (sección 9.3)\n"
+            "- `informe_comparacion_modelos.csv` — comparación de modelos baseline (sección 6.1)\n"
+            "- `informe_cv_temporal.csv` — validación cruzada temporal (sección 7)\n"
+            "- `modelo_evento_importante.pkl` — modelo LightGBM serializado\n"
+            "- `twitter_roberta_finetuned.zip` — modelo de sentimiento fine-tuned (capítulo 4)"
+        )
+
+    with tab_metodologia:
+        st.markdown(
+            "**Cómo funciona este agente**\n\n"
+            "Este agente audita la evidencia ya generada por el TFM — no predice el mercado. "
+            "El modelo predictivo (LightGBM) se entrenó sobre un horizonte histórico cerrado y "
+            "estima la probabilidad de un evento de volatilidad relevante, no la dirección del precio.\n\n"
+            "- **Consulta histórica**: reporta hechos ya registrados dentro del horizonte de estudio.\n"
+            "- **Simulación**: aplica el modelo, ya entrenado, a condiciones de mercado actuales "
+            "combinadas con el sentimiento de un comunicado nuevo.\n\n"
+            "En ambos casos, el modelo en sí permanece fijo — solo cambian los datos de entrada."
+        )
 
 with col_chat:
     conversacion = _conversacion_actual()
@@ -275,15 +328,18 @@ with col_chat:
         with st.chat_message(autor):
             st.markdown(texto)
 
+    if not conversacion["historial"]:
+        st.info("Empieza escribiendo una pregunta abajo, o usa uno de los botones de preguntas rápidas.")
+
     # Botones de acceso rápido: siempre visibles, no solo al principio, para
     # poder lanzar una pregunta rápida en cualquier punto de la conversación.
     st.divider()
-    st.caption("💡 Preguntas rápidas:")
+    st.caption("Preguntas rápidas")
     PREGUNTAS_RAPIDAS = [
-        ("📊 Predicción de hoy", "¿Qué predice hoy el modelo?"),
-        ("🔍 Variables importantes", "¿Qué variables pesan más según SHAP?"),
-        ("⚖️ Financieras vs. comunicación", "¿Cuánto pesa el sentimiento frente a las variables financieras?"),
-        ("✅ ¿Es robusto?", "¿Es un resultado robusto?"),
+        ("Predicción de hoy", "¿Qué predice hoy el modelo?"),
+        ("Variables importantes", "¿Qué variables pesan más según SHAP?"),
+        ("Financieras vs. comunicación", "¿Cuánto pesa el sentimiento frente a las variables financieras?"),
+        ("¿Es robusto?", "¿Es un resultado robusto?"),
     ]
     columnas_botones = st.columns(len(PREGUNTAS_RAPIDAS))
     for columna, (etiqueta, pregunta) in zip(columnas_botones, PREGUNTAS_RAPIDAS):
