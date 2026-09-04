@@ -240,10 +240,30 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-st.title("Agente del TFM: impacto de comunicaciones en mercados financieros")
-st.caption(
-    "Auditor de la evidencia ya generada por el TFM — no un predictor de mercado. "
-    "Pregunta sobre los resultados ya calculados, o pídeme analizar un comunicado nuevo."
+st.markdown(
+    """
+    <div style="padding: 0.5rem 0 1rem 0;">
+        <span style="
+            background-color: #7C5CFC22;
+            color: #A78BFA;
+            border: 1px solid #7C5CFC55;
+            border-radius: 999px;
+            padding: 0.2rem 0.75rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        ">TFM · Data Science</span>
+        <h1 style="margin: 0.5rem 0 0.25rem 0; font-size: 2rem;">
+            Agente de impacto de comunicaciones en mercados financieros
+        </h1>
+        <p style="color: #9CA3AF; font-size: 0.95rem; margin: 0;">
+            Auditor de la evidencia ya generada por el TFM — no un predictor de mercado.
+            Pregunta sobre los resultados ya calculados, o pídeme analizar un comunicado nuevo.
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 st.divider()
 
@@ -285,19 +305,30 @@ with col_dashboard:
         st.components.v1.iframe(TABLEAU_EMBED_URL, height=650, scrolling=True)
 
     with tab_fuentes:
-        st.markdown(
-            "**Datos que usa este agente**\n\n"
-            "- `predicciones_hoy.csv` — predicción diaria por activo (pipeline de producción)\n"
-            "- `dataset_consolidado_05.csv` — condiciones de mercado en vivo, sin corte de fecha\n"
-            "- `dataset_modelado.csv` — horizonte de entrenamiento congelado, usado como referencia\n"
-            "- `informe_shap_importancia.csv` — importancia de variables (capítulo 6, sección 9.1)\n"
-            "- `informe_contribucion_familias.csv` — AUC por familia de variables (sección 9.2)\n"
-            "- `informe_auc_por_activo.csv` — AUC por activo (sección 9.3)\n"
-            "- `informe_comparacion_modelos.csv` — comparación de modelos baseline (sección 6.1)\n"
-            "- `informe_cv_temporal.csv` — validación cruzada temporal (sección 7)\n"
-            "- `modelo_evento_importante.pkl` — modelo LightGBM serializado\n"
-            "- `twitter_roberta_finetuned.zip` — modelo de sentimiento fine-tuned (capítulo 4)"
+        FUENTES = [
+            ("predicciones_hoy.csv", "Predicción diaria por activo (pipeline de producción)"),
+            ("dataset_consolidado_05.csv", "Condiciones de mercado en vivo, sin corte de fecha"),
+            ("dataset_modelado.csv", "Horizonte de entrenamiento congelado, usado como referencia"),
+            ("informe_shap_importancia.csv", "Importancia de variables (capítulo 6, sección 9.1)"),
+            ("informe_contribucion_familias.csv", "AUC por familia de variables (sección 9.2)"),
+            ("informe_auc_por_activo.csv", "AUC por activo (sección 9.3)"),
+            ("informe_comparacion_modelos.csv", "Comparación de modelos baseline (sección 6.1)"),
+            ("informe_cv_temporal.csv", "Validación cruzada temporal (sección 7)"),
+            ("modelo_evento_importante.pkl", "Modelo LightGBM serializado"),
+            ("twitter_roberta_finetuned.zip", "Modelo de sentimiento fine-tuned (capítulo 4)"),
+        ]
+        tarjetas_html = "".join(
+            f"""<div style="
+                    border: 1px solid #2D3340; border-radius: 8px;
+                    padding: 0.6rem 0.9rem; margin-bottom: 0.5rem;
+                    background-color: #161B26;
+                ">
+                <code style="color: #A78BFA; font-size: 0.85rem;">{nombre}</code>
+                <div style="color: #9CA3AF; font-size: 0.8rem; margin-top: 0.15rem;">{descripcion}</div>
+            </div>"""
+            for nombre, descripcion in FUENTES
         )
+        st.markdown(f'<div style="margin-top: 0.5rem;">{tarjetas_html}</div>', unsafe_allow_html=True)
 
     with tab_metodologia:
         st.markdown(
@@ -356,4 +387,15 @@ with col_chat:
     if mensaje_usuario:
         _enviar_mensaje(mensaje_usuario)
         st.rerun()
+
+st.divider()
+st.markdown(
+    """
+    <div style="text-align: center; color: #6B7280; font-size: 0.8rem; padding: 1rem 0;">
+        TFM — Impacto de comunicaciones públicas en mercados financieros ·
+        Sección 8.4: arquitectura de producción
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
 
