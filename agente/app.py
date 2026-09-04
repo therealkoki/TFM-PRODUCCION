@@ -185,11 +185,19 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict) -> str:
 
 st.set_page_config(page_title="Agente TFM — Impacto de comunicaciones en mercados", layout="wide")
 
-st.title("Agente del TFM: impacto de comunicaciones en mercados financieros")
-st.caption(
-    "Auditor de la evidencia ya generada por el TFM — no un predictor de mercado. "
-    "Pregunta sobre los resultados ya calculados, o pídeme analizar un comunicado nuevo."
-)
+col_titulo, col_boton_reset = st.columns([5, 1])
+with col_titulo:
+    st.title("Agente del TFM: impacto de comunicaciones en mercados financieros")
+    st.caption(
+        "Auditor de la evidencia ya generada por el TFM — no un predictor de mercado. "
+        "Pregunta sobre los resultados ya calculados, o pídeme analizar un comunicado nuevo."
+    )
+with col_boton_reset:
+    st.write("")  # pequeño espaciador para alinear verticalmente el botón con el título
+    if st.button("🔄 Nueva conversación", use_container_width=True):
+        st.session_state.historial = []
+        st.session_state.pendiente = None
+        st.rerun()
 
 with st.spinner("Cargando datos del TFM desde Drive..."):
     datos = cargar_todo()
