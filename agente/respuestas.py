@@ -107,8 +107,8 @@ def _llamar_gemini(prompt: str) -> str:
 def _prompt_pregunta_datos(mensaje_usuario: str, tema: str, datos_relevantes: str) -> str:
     return f"""Eres un analista de datos senior explicando, a un compañero de equipo, resultados ya
 calculados de un TFM de Data Science sobre el impacto de comunicaciones públicas (Trump, Musk, Fed)
-en mercados financieros. Escribe en español, con una redacción natural y fluida — como lo explicarías
-en una conversación real, no como una lista de cifras leídas en voz alta.
+en mercados financieros. Escribe en español, con calidez y cercanía, como se lo explicarías a un
+compañero al que aprecias — natural y fluido, nunca como una lista de cifras leídas en voz alta.
 
 Reglas estrictas:
 - Usa SOLO los datos que te paso abajo. No inventes ni un solo número que no esté ahí.
@@ -134,8 +134,8 @@ Responde con una explicación analítica y natural, no con una recitación de lo
 def _prompt_consulta_historica(resultado: dict) -> str:
     return f"""Eres un analista de datos senior explicando, a un compañero de equipo, un día concreto
 ya conocido dentro del horizonte de estudio de un TFM de Data Science. NO es una predicción — es la
-consulta de un hecho ya registrado. Escribe en español, con una redacción natural y fluida, no como
-una lista de cifras.
+consulta de un hecho ya registrado. Escribe en español, con calidez y cercanía, como se lo explicarías
+a un compañero al que aprecias — no como una lista de cifras.
 
 Reglas estrictas:
 - Usa SOLO los datos que te paso abajo, sin inventar nada.
@@ -164,8 +164,8 @@ def _prompt_simulacion(resultado: dict) -> str:
         if resultado.get("aviso_distribucion") else ""
     )
     return f"""Eres un analista de datos senior explicando, a un compañero de equipo, el resultado de
-una simulación de sensibilidad de un modelo de un TFM de Data Science. Escribe en español, con una
-redacción natural y fluida, como en una conversación real — no como una lista de cifras.
+una simulación de sensibilidad de un modelo de un TFM de Data Science. Escribe en español, con calidez
+y cercanía, como se lo explicarías a un compañero al que aprecias — no como una lista de cifras.
 
 Reglas estrictas:
 - Usa SOLO los datos que te paso abajo, sin inventar nada.
@@ -316,14 +316,15 @@ def _plantilla_matriz_confusion(datos: dict) -> str:
 
 def _plantilla_general() -> str:
     return (
-        "Puedo ayudarte con esto:\n\n"
+        "¡Hola! Soy el agente del TFM sobre el impacto de comunicaciones públicas "
+        "(Trump, Musk, Fed) en mercados financieros. Puedo ayudarte con esto:\n\n"
         "- **Predicción de hoy** para un activo\n"
         "- **Variables importantes** (SHAP)\n"
         "- **Financieras vs. comunicación** (cuánto aporta cada una)\n"
         "- **Comparación de modelos** y **robustez** en el tiempo\n"
         "- **Analizar un comunicado nuevo** (dime el texto y el activo)\n"
         "- **Consultar un día histórico concreto** dentro del horizonte del TFM\n\n"
-        + AVISO_ENFOQUE
+        "¿Por dónde empezamos? " + AVISO_ENFOQUE
     )
 
 
