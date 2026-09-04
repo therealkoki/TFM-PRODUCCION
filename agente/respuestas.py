@@ -331,6 +331,13 @@ def _construir_texto_datos_para_gemini(datos: dict, tema: str, tickers: list) ->
 # --------------------------------------------------------------------------
 
 def generar_respuesta_pregunta_datos(mensaje_usuario: str, clasificacion: dict, datos: dict) -> str:
+    activo_no_soportado = clasificacion.get("activo_no_soportado")
+    if activo_no_soportado:
+        return (
+            f"**{activo_no_soportado.capitalize()}** no es uno de los 6 activos con evidencia "
+            f"suficiente en este TFM. Los disponibles son: **{', '.join(ACTIVOS_CON_EVIDENCIA)}**."
+        )
+
     tema = clasificacion.get("tema")
     tickers = extraer_todos_los_tickers(mensaje_usuario) or (
         [clasificacion["ticker"]] if clasificacion.get("ticker") else []
