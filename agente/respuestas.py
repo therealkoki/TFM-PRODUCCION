@@ -27,6 +27,27 @@ from router_intencion import ACTIVOS_CON_EVIDENCIA, ALIAS_ACTIVOS
 GEMINI_MODEL = "gemini-flash-latest"
 TIMEOUT_GEMINI_SEGUNDOS = 15
 
+NOMBRES_ARCHIVO_POR_TEMA = {
+    "predicciones_hoy": "predicciones_hoy.csv",
+    "shap_importancia": "informe_shap_importancia.csv",
+    "contribucion_familias": "informe_contribucion_familias.csv",
+    "auc_por_activo": "informe_auc_por_activo.csv",
+    "comparacion_modelos": "informe_comparacion_modelos.csv",
+    "cv_temporal": "informe_cv_temporal.csv",
+    "matriz_confusion_umbrales": "informe_matriz_confusion_umbrales.csv",
+}
+
+
+def _con_cita_fuente(texto: str, tema: str) -> str:
+    """Añade al pie, en letra pequeña, de qué archivo salió el dato — para que
+    quede trazable en todo momento qué evidencia concreta sustenta la respuesta
+    (coherente con el enfoque de "auditor de la evidencia" de todo el agente)."""
+    nombre_archivo = NOMBRES_ARCHIVO_POR_TEMA.get(tema)
+    if not nombre_archivo:
+        return texto
+    return f"{texto}\n\n*Fuente: `{nombre_archivo}`*"
+
+
 AVISO_ENFOQUE = (
     "Este agente es un auditor de la evidencia ya generada por el TFM, no un predictor de "
     "mercado: el propio análisis estadístico (capítulo 6) demuestra que la relación entre "
@@ -349,9 +370,11 @@ def generar_respuesta_pregunta_datos(mensaje_usuario: str, clasificacion: dict, 
     texto_plantilla = _construir_texto_datos_para_gemini(datos, tema, tickers)
 
     try:
-        return _llamar_gemini(_prompt_pregunta_datos(mensaje_usuario, tema or "visión general", texto_plantilla))
+        respuesta = _llamar_gemini(_prompt_pregunta_datos(mensaje_usuario, tema or "visión general", texto_plantilla))
     except Exception:
-        return texto_plantilla
+        respuesta = texto_plantilla
+
+    return _con_cita_fuente(respuesta, tema)
 
 
 def generar_respuesta_consulta_historica(resultado: dict) -> str:
