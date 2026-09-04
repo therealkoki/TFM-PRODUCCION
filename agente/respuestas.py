@@ -84,25 +84,41 @@ def _llamar_gemini(prompt: str) -> str:
 
 
 def _prompt_pregunta_datos(mensaje_usuario: str, tema: str, datos_relevantes: str) -> str:
-    return f"""Eres el asistente de un TFM de Data Science sobre el impacto de comunicaciones
-públicas (Trump, Musk, Fed) en mercados financieros. Tu único papel es explicar, en
-español y de forma clara y breve (máximo 3-4 frases), los datos ya calculados que te
-paso a continuación. NO inventes cifras que no estén en estos datos. NO te presentes
-como un predictor de mercado: el TFM demuestra que la relación es modesta y heterogénea.
+    return f"""Eres un analista de datos senior explicando, a un compañero de equipo, resultados ya
+calculados de un TFM de Data Science sobre el impacto de comunicaciones públicas (Trump, Musk, Fed)
+en mercados financieros. Escribe en español, con una redacción natural y fluida — como lo explicarías
+en una conversación real, no como una lista de cifras leídas en voz alta.
+
+Reglas estrictas:
+- Usa SOLO los datos que te paso abajo. No inventes ni un solo número que no esté ahí.
+- No listes cada elemento con la misma fórmula repetida (evita "Para X, el modelo estima... Para Y, el
+  modelo estima..."). En vez de eso, agrupa, compara, señala qué destaca (el más alto, el más bajo, un
+  patrón, algo sorprendente o esperable) — como haría un analista real, no una plantilla.
+- Sé breve: 2-4 frases como máximo, salvo que los datos tengan varias partes claramente distintas que
+  merezcan una frase cada una.
+- No te presentes como un predictor de mercado: el TFM demuestra que la relación entre comunicaciones
+  y mercado es modesta y heterogénea — encájalo con naturalidad si el tema lo pide, sin forzarlo.
 
 Pregunta del usuario: {mensaje_usuario}
 
-Datos relevantes ({tema}):
+Datos reales disponibles ({tema}):
 {datos_relevantes}
 
-Responde directamente a la pregunta usando solo estos datos."""
+Responde con una explicación analítica y natural, no con una recitación de los datos."""
 
 
 def _prompt_consulta_historica(resultado: dict) -> str:
-    return f"""Eres el asistente de un TFM de Data Science. Un usuario ha preguntado sobre un
-día histórico concreto, ya conocido, dentro del horizonte de estudio del TFM. NO es una
-predicción — es una consulta de un hecho ya registrado. Redacta la respuesta en español,
-clara y breve (máximo 4-5 frases), usando SOLO estos datos, sin inventar nada:
+    return f"""Eres un analista de datos senior explicando, a un compañero de equipo, un día concreto
+ya conocido dentro del horizonte de estudio de un TFM de Data Science. NO es una predicción — es la
+consulta de un hecho ya registrado. Escribe en español, con una redacción natural y fluida, no como
+una lista de cifras.
+
+Reglas estrictas:
+- Usa SOLO los datos que te paso abajo, sin inventar nada.
+- Cuenta primero el hecho (hubo o no evento, hubo o no anomalía) y solo después, con matiz, la
+  probabilidad del modelo — nunca al revés.
+- Máximo 4-5 frases antes del aviso final obligatorio.
+- Termina SIEMPRE incluyendo, tal cual y sin parafrasear, este aviso: "{resultado['aviso']}"
 
 Activo: {resultado['ticker']}
 Fecha: {resultado['fecha']}
@@ -113,7 +129,7 @@ Volatilidad (20d) ese día: {resultado['volatility_20d_real']:.4f}
 Sentimiento agregado de las comunicaciones ese día: {resultado['sentiment_real']:.4f} ({resultado['n_comunicaciones_real']} comunicaciones)
 Probabilidad que el modelo asigna a este día: {resultado['probabilidad_modelo']:.3f}
 
-Termina SIEMPRE la respuesta incluyendo, tal cual, este aviso: "{resultado['aviso']}\""""
+Redacta la respuesta ahora."""
 
 
 def _prompt_simulacion(resultado: dict) -> str:
@@ -121,18 +137,25 @@ def _prompt_simulacion(resultado: dict) -> str:
         f"\nAviso de fuera de distribución: {resultado['aviso_distribucion']}"
         if resultado.get("aviso_distribucion") else ""
     )
-    return f"""Eres el asistente de un TFM de Data Science. Un usuario ha pedido analizar
-un comunicado (real o hipotético) sobre el activo {resultado['ticker']}. Ya se ha
-calculado todo lo necesario; tu único trabajo es redactar la respuesta en español,
-clara y breve (máximo 4-5 frases), usando SOLO estos datos, sin inventar nada:
+    return f"""Eres un analista de datos senior explicando, a un compañero de equipo, el resultado de
+una simulación de sensibilidad de un modelo de un TFM de Data Science. Escribe en español, con una
+redacción natural y fluida, como en una conversación real — no como una lista de cifras.
 
+Reglas estrictas:
+- Usa SOLO los datos que te paso abajo, sin inventar nada.
+- No te limites a repetir los números: señala si el cambio es grande o pequeño en su contexto (recuerda
+  que la comunicación pesa poco frente a las variables financieras en este modelo), y qué dirección tomó.
+- Máximo 3-4 frases antes del aviso final obligatorio.
+- Termina SIEMPRE incluyendo, tal cual y sin parafrasear, este aviso: "{resultado['aviso']}"
+
+Activo: {resultado['ticker']}
 Texto analizado: {resultado['texto_original']}
 Sentimiento detectado: {resultado['sentimiento']['etiqueta']} (prob. positiva={resultado['sentimiento']['prob_positive']:.3f}, prob. negativa={resultado['sentimiento']['prob_negative']:.3f})
 Probabilidad de evento importante ANTES (con la comunicación real del último día): {resultado['prediccion_antes']['probabilidad']:.3f}
 Probabilidad de evento importante DESPUÉS (con este comunicado): {resultado['prediccion_despues']['probabilidad']:.3f}
 Diferencia: {resultado['diferencia_probabilidad']:+.3f}
 {aviso_distribucion_texto}
-Termina SIEMPRE la respuesta incluyendo, tal cual, este aviso: "{resultado['aviso']}\""""
+Redacta la respuesta ahora."""
 
 
 # --------------------------------------------------------------------------
@@ -145,20 +168,40 @@ def _plantilla_predicciones_hoy(datos: dict, tickers: list) -> str:
         return ("Todavía no hay predicciones del día disponibles — el pipeline de producción "
                 "(punto 7) aún no las ha generado.")
     tickers = tickers or list(df["ticker"].unique()) if "ticker" in df.columns else []
-    partes = []
+    filas = []
     for ticker in tickers:
         fila = df[df["ticker"] == ticker] if "ticker" in df.columns else pd.DataFrame()
-        if fila.empty:
-            continue
-        fila = fila.iloc[0]
-        partes.append(
-            f"Para {ticker}, el modelo estima una probabilidad de evento importante de "
-            f"{fila.get('probabilidad', float('nan')):.1%}, "
-            f"{'por encima' if fila.get('es_evento') else 'por debajo'} del umbral de decisión."
-        )
-    if not partes:
+        if not fila.empty:
+            filas.append(fila.iloc[0])
+    if not filas:
         return "No encontré la predicción de hoy para ese activo."
-    return " ".join(partes) + " " + AVISO_ENFOQUE
+
+    if len(filas) == 1:
+        fila = filas[0]
+        return (
+            f"Hoy el modelo estima una probabilidad de evento importante del {fila['probabilidad']:.1%} "
+            f"para {fila['ticker']}, {'por encima' if fila.get('es_evento') else 'por debajo'} del "
+            f"umbral de decisión. {AVISO_ENFOQUE}"
+        )
+
+    ordenadas = sorted(filas, key=lambda f: f["probabilidad"], reverse=True)
+    mas_alta, mas_baja = ordenadas[0], ordenadas[-1]
+    activos_con_evento = [f["ticker"] for f in filas if f.get("es_evento")]
+
+    calificativo = "bajas en general" if mas_alta["probabilidad"] < 0.3 else "dispares"
+    resumen = (
+        f"Hoy el modelo estima probabilidades de evento importante {calificativo} para los "
+        f"{len(filas)} activos consultados: la más alta es {mas_alta['ticker']} "
+        f"({mas_alta['probabilidad']:.1%}) y la más baja {mas_baja['ticker']} ({mas_baja['probabilidad']:.1%})."
+    )
+    if not activos_con_evento:
+        resumen += " Ninguna supera el umbral de decisión, así que no se prevé ningún evento hoy."
+    elif len(activos_con_evento) == 1:
+        resumen += f" {activos_con_evento[0]} sí supera el umbral de decisión hoy."
+    else:
+        resumen += f" {', '.join(activos_con_evento)} sí superan el umbral de decisión hoy."
+
+    return resumen + " " + AVISO_ENFOQUE
 
 
 def _plantilla_shap_importancia(datos: dict) -> str:
