@@ -76,6 +76,32 @@ TEMAS_PREGUNTA_DATOS = {
 }
 
 
+# Nombres de activos/empresas habituales que NO están soportados — se usan solo
+# para poder avisar explícitamente ("Apple no es uno de los 6 activos...") en
+# vez de responder en silencio con los 6 sí soportados, como si el usuario no
+# hubiera especificado ningún activo. Lista no exhaustiva, cubre los casos más
+# probables en una demo o defensa.
+ACTIVOS_NO_SOPORTADOS_COMUNES = [
+    "apple", "google", "alphabet", "microsoft", "amazon", "meta", "facebook",
+    "nvidia", "netflix", "oro", "gold", "plata", "silver", "petróleo", "petroleo",
+    "oil", "brent", "wti", "euro/dólar", "eur/usd", "dólar", "dolar", "dow jones",
+    "nikkei", "ibex",
+]
+
+
+def detectar_activo_no_soportado(mensaje: str) -> str | None:
+    """Si el mensaje menciona un activo/empresa habitual que NO está entre los
+    6 soportados, y no menciona ninguno de los 6 sí soportados, devuelve el
+    nombre mencionado (para poder aclararlo explícitamente en la respuesta)."""
+    if detectar_ticker(mensaje) is not None:
+        return None
+    texto = mensaje.lower()
+    for nombre in ACTIVOS_NO_SOPORTADOS_COMUNES:
+        if nombre in texto:
+            return nombre
+    return None
+
+
 def detectar_ticker(mensaje: str) -> str | None:
     """Busca un ticker o alias conocido en el mensaje. Devuelve el ticker exacto o None."""
     texto = mensaje.lower()
@@ -189,5 +215,5 @@ def clasificar_mensaje(mensaje: str) -> dict:
         "tipo": "pregunta_datos",
         "ticker": ticker,
         "tema": detectar_tema_pregunta_datos(mensaje),
+        "activo_no_soportado": detectar_activo_no_soportado(mensaje),
     }
-
