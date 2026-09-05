@@ -28,7 +28,7 @@ from respuestas import (
     generar_respuesta_pregunta_datos,
     generar_respuesta_simulacion,
 )
-from router_intencion import clasificar_mensaje, detectar_fecha, detectar_ticker
+from router_intencion import clasificar_mensaje, detectar_fecha, detectar_ticker, hay_senal_de_tema_nuevo
 from simulacion import analizar_comunicado_nuevo, consultar_dia_historico
 
 
@@ -94,8 +94,33 @@ def _ejecutar_simulacion(texto: str, ticker: str, datos: dict):
     return generar_respuesta_simulacion(resultado)
 
 
+def _debe_abandonar_pendiente(mensaje_usuario: str, pendiente: dict) -> bool:
+    """
+    Decide si un mensaje nuevo, llegado mientras el agente esperaba completar
+    una simulación o consulta histórica, señala con claridad que el usuario
+    ha cambiado de tema — para no quedarse repitiendo la misma pregunta para
+    siempre si el usuario simplemente dejó de responder a lo que se le pedía.
+    """
+    if hay_senal_de_tema_nuevo(mensaje_usuario, pendiente.get("tipo")):
+        return True
+    # Caso específico: si se está esperando una FECHA en concreto y el mensaje
+    # no contiene ni un solo dígito, es prácticamente imposible que sea un
+    # intento genuino de responder con una fecha (hasta una fecha mal escrita
+    # como "32 de enero" lleva números) — así que se interpreta como abandono.
+    if (pendiente.get("tipo") == "consulta_historica"
+            and pendiente.get("ticker") is not None
+            and pendiente.get("fecha") is None
+            and not any(caracter.isdigit() for caracter in mensaje_usuario)):
+        return True
+    return False
+
+
 def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict):
     pendiente = conversacion["pendiente"]
+
+    if pendiente and _debe_abandonar_pendiente(mensaje_usuario, pendiente):
+        conversacion["pendiente"] = None
+        pendiente = None
 
     # --- Continuación de una simulación a la que le faltaba texto o ticker ---
     if pendiente and pendiente.get("tipo") == "simulacion":
