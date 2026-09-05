@@ -464,16 +464,16 @@ Valor mínimo del índice: {stats['minimo']:.1f} (el {stats['fecha_minimo']})
 Redacta la respuesta ahora."""
 
 
-def generar_respuesta_evolucion_precio(ticker: str, datos: dict):
+def generar_respuesta_evolucion_precio(ticker: str, datos: dict, fecha_inicio: str = None, fecha_fin: str = None):
     """Devuelve (texto, grafico_o_none)."""
     dataset = datos.get("dataset_consolidado_05")
     if dataset is None:
         return ("No puedo mostrar la evolución de precio ahora mismo: `dataset_consolidado_05.csv` "
                 "no está disponible en Drive todavía."), None
 
-    serie = graficos.calcular_serie_evolucion_precio(dataset, ticker)
+    serie = graficos.calcular_serie_evolucion_precio(dataset, ticker, fecha_inicio, fecha_fin)
     if serie.empty:
-        return f"No he encontrado datos de evolución de precio para **{ticker}**.", None
+        return f"No he encontrado datos de evolución de precio para **{ticker}** en ese periodo.", None
 
     fila_max = serie.loc[serie["indice"].idxmax()]
     fila_min = serie.loc[serie["indice"].idxmin()]
@@ -507,7 +507,7 @@ def generar_respuesta_evolucion_precio(ticker: str, datos: dict):
     texto += "\n\n" + _aviso_html(aviso_indice)
 
     try:
-        grafico = graficos.grafico_evolucion_precio(dataset, ticker)
+        grafico = graficos.grafico_evolucion_precio(dataset, ticker, fecha_inicio, fecha_fin)
     except Exception:
         grafico = None
 
