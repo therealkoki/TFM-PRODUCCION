@@ -10,6 +10,7 @@ numpy
 joblib
 scikit-learn
 lightgbm
+plotly
 
 # Acceso a Drive (mismas versiones que ya usa el repo de producción)
 google-api-python-client
@@ -24,3 +25,4 @@ ftfy
 
 # Generación de lenguaje natural (capa gratuita)
 google-generativeai
+
