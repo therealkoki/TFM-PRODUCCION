@@ -23,6 +23,7 @@ aparte en la memoria o la defensa.)
 import streamlit as st
 
 from carga_datos import ACTIVOS_CON_EVIDENCIA, cargar_modelo_sentimiento, cargar_todo
+from informe import generar_informe_docx, hay_contenido_exportable
 from respuestas import (
     generar_respuesta_consulta_historica,
     generar_respuesta_evolucion_precio,
@@ -47,11 +48,11 @@ from simulacion import analizar_comunicado_nuevo, consultar_dia_historico
 # --------------------------------------------------------------------------
 
 def _pedir_ticker():
-    return f"¿Sobre qué activo? Los disponibles son: {', '.join(ACTIVOS_CON_EVIDENCIA)}.", None
+    return f"¿Sobre qué activo? Los disponibles son: {', '.join(ACTIVOS_CON_EVIDENCIA)}.", None, None
 
 
 def _pedir_fecha():
-    return "¿Qué fecha? (formato AAAA-MM-DD, por ejemplo 2025-04-09, o \"9 de abril de 2025\")", None
+    return "¿Qué fecha? (formato AAAA-MM-DD, por ejemplo 2025-04-09, o \"9 de abril de 2025\")", None, None
 
 
 def _pedir_rango_fechas():
@@ -60,16 +61,16 @@ def _pedir_rango_fechas():
         "\"desde 2025-01-01 hasta 2025-06-30\" (también vale \"desde el 1 de enero de 2025 "
         "hasta el 30 de junio de 2025\", con el año en las dos fechas) — o escribe "
         "\"todo el histórico\" si prefieres verlo completo."
-    ), None
+    ), None, None
 
 
 def _ejecutar_consulta_historica(ticker: str, fecha: str, datos: dict):
     if datos.get("modelo_info") is None:
         return ("No puedo consultar ese día ahora mismo: el modelo predictivo "
-                "(`modelo_evento_importante.pkl`) no está disponible en Drive todavía."), None
+                "(`modelo_evento_importante.pkl`) no está disponible en Drive todavía."), None, None
     if datos.get("dataset_modelado") is None:
         return ("No puedo consultar ese día ahora mismo: `dataset_modelado.csv` "
-                "no está disponible en Drive todavía."), None
+                "no está disponible en Drive todavía."), None, None
 
     try:
         resultado = consultar_dia_historico(
@@ -79,22 +80,24 @@ def _ejecutar_consulta_historica(ticker: str, fecha: str, datos: dict):
             modelo_info=datos["modelo_info"],
         )
     except ValueError as e:
-        return str(e), None
+        return str(e), None, None
 
-    return generar_respuesta_consulta_historica(resultado)
+    texto, grafico = generar_respuesta_consulta_historica(resultado)
+    return texto, grafico, "consulta_historica"
 
 
 def _ejecutar_evolucion_precio(ticker: str, datos: dict, fecha_inicio: str = None, fecha_fin: str = None):
-    return generar_respuesta_evolucion_precio(ticker, datos, fecha_inicio, fecha_fin)
+    texto, grafico = generar_respuesta_evolucion_precio(ticker, datos, fecha_inicio, fecha_fin)
+    return texto, grafico, "evolucion_precio"
 
 
 def _ejecutar_simulacion(texto: str, ticker: str, datos: dict):
     if datos.get("modelo_info") is None:
         return ("No puedo simular ahora mismo: el modelo predictivo (`modelo_evento_importante.pkl`) "
-                "no está disponible en Drive todavía."), None
+                "no está disponible en Drive todavía."), None, None
     if datos.get("dataset_consolidado_05") is None:
         return ("No puedo simular ahora mismo: `dataset_consolidado_05.csv` "
-                "(condiciones de mercado actuales) no está disponible en Drive todavía."), None
+                "(condiciones de mercado actuales) no está disponible en Drive todavía."), None, None
 
     with st.spinner("Cargando el modelo de sentimiento (puede tardar unos segundos la primera vez)..."):
         tokenizer, modelo_sentimiento = cargar_modelo_sentimiento()
@@ -110,9 +113,10 @@ def _ejecutar_simulacion(texto: str, ticker: str, datos: dict):
             rangos_entrenamiento=datos.get("rangos_entrenamiento", {}),
         )
     except ValueError as e:
-        return str(e), None
+        return str(e), None, None
 
-    return generar_respuesta_simulacion(resultado)
+    texto_respuesta, grafico = generar_respuesta_simulacion(resultado)
+    return texto_respuesta, grafico, "simulacion"
 
 
 def _debe_abandonar_pendiente(mensaje_usuario: str, pendiente: dict) -> bool:
@@ -172,7 +176,7 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict):
             return _pedir_ticker()
 
         conversacion["pendiente"] = pendiente
-        return "¿Cuál es el texto del comunicado que quieres analizar?", None
+        return "¿Cuál es el texto del comunicado que quieres analizar?", None, None
 
     # --- Continuación de una evolución de precio: falta el activo, o falta
     # confirmar el periodo (siempre se pregunta explícitamente, nunca se
@@ -208,7 +212,7 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict):
             "No he entendido bien el periodo. Indica las dos fechas completas (con el año en "
             "ambas), por ejemplo \"desde 2025-01-01 hasta 2025-06-30\", o escribe "
             "\"todo el histórico\" para verlo completo."
-        ), None
+        ), None, None
 
     # --- Continuación de una consulta histórica a la que le faltaba ticker o fecha ---
     if pendiente and pendiente.get("tipo") == "consulta_historica":
@@ -256,7 +260,7 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict):
             "texto_comunicado": texto,
         }
         if texto is None:
-            return "¿Cuál es el texto del comunicado que quieres analizar?", None
+            return "¿Cuál es el texto del comunicado que quieres analizar?", None, None
         return _pedir_ticker()
 
     if clasificacion["tipo"] == "consulta_historica":
@@ -276,7 +280,13 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict):
         return _pedir_fecha()
 
     # --- Pregunta sobre datos ya existentes ---
-    return generar_respuesta_pregunta_datos(mensaje_usuario, clasificacion, datos)
+    texto, grafico = generar_respuesta_pregunta_datos(mensaje_usuario, clasificacion, datos)
+    # Categoría para el informe exportable: el propio tema detectado (p. ej.
+    # "predicciones_hoy", "shap_importancia"...) si se reconoció uno real;
+    # None si fue un saludo, cortesía, pregunta fuera de ámbito o activo no
+    # soportado — esos no aportan nada útil que exportar a un informe.
+    categoria = clasificacion.get("tema") if not clasificacion.get("activo_no_soportado") else None
+    return texto, grafico, categoria
 
 
 # --------------------------------------------------------------------------
@@ -393,6 +403,39 @@ with st.sidebar:
             st.rerun()
 
     st.divider()
+
+    if st.button("Exportar informe", use_container_width=True):
+        conversacion_activa = _conversacion_actual()
+        if not hay_contenido_exportable(conversacion_activa):
+            st.session_state.informe_generado = None
+            st.session_state.informe_error = (
+                "Todavía no hay contenido con datos reales en esta conversación para exportar "
+                "(saludos, cortesías y preguntas fuera de ámbito no cuentan)."
+            )
+        else:
+            with st.spinner("Generando informe (puede tardar unos segundos)..."):
+                try:
+                    ruta = generar_informe_docx(conversacion_activa, "/tmp/informe_tfm_agente.docx")
+                    with open(ruta, "rb") as f:
+                        st.session_state.informe_generado = f.read()
+                    st.session_state.informe_error = None
+                except Exception as e:
+                    st.session_state.informe_generado = None
+                    st.session_state.informe_error = f"No se pudo generar el informe: {e}"
+
+    if st.session_state.get("informe_error"):
+        st.warning(st.session_state.informe_error)
+
+    if st.session_state.get("informe_generado"):
+        st.download_button(
+            "Descargar informe (.docx)",
+            data=st.session_state.informe_generado,
+            file_name="informe_tfm_agente.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True,
+        )
+
+    st.divider()
     st.caption("TFM — Impacto de comunicaciones públicas en mercados financieros")
 
 with st.spinner("Cargando datos del TFM desde Drive..."):
@@ -413,16 +456,16 @@ with col_chat:
         conversacion = _conversacion_actual()
 
         def _enviar_mensaje(mensaje: str):
-            conversacion["historial"].append(("user", mensaje, None))
+            conversacion["historial"].append(("user", mensaje, None, None))
             # La primera vez que se manda un mensaje en una conversación nueva, se
             # usa como título en el panel lateral (recortado), igual que hace ChatGPT.
             if conversacion["titulo"] == "Nueva conversación":
                 conversacion["titulo"] = mensaje[:40] + ("…" if len(mensaje) > 40 else "")
             with st.spinner("Pensando..."):
-                respuesta, grafico = _procesar_mensaje(mensaje, datos, conversacion)
-            conversacion["historial"].append(("assistant", respuesta, grafico))
+                respuesta, grafico, categoria = _procesar_mensaje(mensaje, datos, conversacion)
+            conversacion["historial"].append(("assistant", respuesta, grafico, categoria))
 
-        for autor, texto, grafico in conversacion["historial"]:
+        for autor, texto, grafico, categoria in conversacion["historial"]:
             with st.chat_message(autor):
                 # unsafe_allow_html=True: necesario para que los avisos legales
                 # se vean como párrafo aparte en gris (ver _aviso_html en
