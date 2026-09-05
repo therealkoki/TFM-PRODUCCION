@@ -145,11 +145,22 @@ def detectar_fecha(mensaje: str) -> str | None:
     """
     Busca una fecha en el mensaje, en formato ISO (2025-04-09) o en formato
     natural en español ("9 de abril de 2025"). Devuelve la fecha en formato
-    ISO (YYYY-MM-DD) o None si no encuentra ninguna.
+    ISO (YYYY-MM-DD) si es una fecha real y válida, o None si no encuentra
+    ninguna o si la que encuentra es imposible (p. ej. "32 de enero").
     """
+    import datetime
+
+    def _validar(anio: str, mes: int, dia: str) -> str | None:
+        try:
+            fecha = datetime.date(int(anio), mes, int(dia))
+        except ValueError:
+            return None
+        return fecha.isoformat()
+
     coincidencia_iso = re.search(r"\b(\d{4})-(\d{2})-(\d{2})\b", mensaje)
     if coincidencia_iso:
-        return coincidencia_iso.group(0)
+        anio, mes, dia = coincidencia_iso.groups()
+        return _validar(anio, int(mes), dia)
 
     coincidencia_natural = re.search(
         r"\b(\d{1,2})\s+de\s+([a-záéíóú]+)\s+de\s+(\d{4})\b", mensaje.lower()
@@ -158,7 +169,7 @@ def detectar_fecha(mensaje: str) -> str | None:
         dia, mes_texto, anio = coincidencia_natural.groups()
         mes = MESES_ES.get(mes_texto)
         if mes:
-            return f"{anio}-{mes:02d}-{int(dia):02d}"
+            return _validar(anio, mes, dia)
 
     return None
 
