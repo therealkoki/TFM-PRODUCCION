@@ -14,6 +14,7 @@ resto en gris tenue, para dirigir la vista hacia lo que responde la pregunta.
 """
 
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 
 COLOR_ACENTO = "#7C5CFC"
@@ -122,6 +123,34 @@ def grafico_simulacion(resultado: dict) -> go.Figure:
     ))
     fig.update_layout(**{**LAYOUT_BASE, "height": 280}, title=f"Probabilidad de evento importante — {resultado['ticker']}",
                        yaxis=dict(tickformat=".1%", gridcolor=COLOR_CUADRICULA))
+    return fig
+
+
+def grafico_evolucion_precio(dataset_consolidado_05: pd.DataFrame, ticker: str) -> go.Figure:
+    """
+    Índice de evolución relativa (base 100), construido a partir de los
+    log_return diarios de dataset_consolidado_05.
+
+    IMPORTANTE: no es el precio real en dólares/euros — ninguno de los CSV
+    del pipeline guarda precios absolutos, solo retornos diarios. El índice
+    sube y baja exactamente igual que el precio real (misma forma, mismos
+    porcentajes de subida/bajada), solo que normalizado para empezar en 100,
+    de forma que se puede leer la evolución relativa sin necesitar el precio
+    real de partida.
+    """
+    df = dataset_consolidado_05[dataset_consolidado_05["ticker"] == ticker].sort_values("date").copy()
+    df["indice"] = 100 * np.exp(df["log_return"].cumsum())
+
+    fig = go.Figure(go.Scatter(
+        x=df["date"], y=df["indice"], mode="lines",
+        line=dict(color=COLOR_ACENTO, width=2),
+    ))
+    fig.update_layout(
+        **{**LAYOUT_BASE, "height": 350},
+        title=f"Evolución relativa de {ticker} (índice, base 100)",
+        xaxis=dict(gridcolor=COLOR_CUADRICULA),
+        yaxis=dict(title="Índice (base 100)", gridcolor=COLOR_CUADRICULA),
+    )
     return fig
 
 
