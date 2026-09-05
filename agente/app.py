@@ -2,11 +2,22 @@
 app.py — Interfaz principal del agente de la sección 8.4 del TFM.
 
 Conecta: carga_datos (Drive) + router_intencion (clasificación) +
-simulacion (análisis de comunicados nuevos) + respuestas (Gemini/plantilla).
+simulacion (análisis de comunicados nuevos) + respuestas (Gemini/plantilla)
++ graficos (Plotly).
 
-Estructura de la página: chat a la izquierda, dashboard de Tableau Public
-embebido a la derecha (Nivel 1 de integración, un simple iframe — el usuario
-puede filtrar directamente dentro del panel, sin que el agente intervenga).
+Estructura de la página: una sola columna de chat, centrada. Cada respuesta
+que se apoya en datos concretos lleva su propio gráfico de Plotly pegado
+justo debajo del texto, dentro de la misma burbuja del historial — así el
+gráfico queda anclado a la pregunta que lo generó y nunca desaparece al
+hacer scroll hacia arriba, ni hay que elegir entre varias pestañas fijas.
+
+(Versión anterior: dashboard de Tableau Public embebido en un panel aparte.
+Se sustituyó por gráficos nativos porque el dashboard de Tableau nunca
+terminaba de encajar visualmente con el resto de la app —fondo blanco propio,
+tamaños fijos, barra de herramientas ajena—, y porque un gráfico fijo no
+podía adaptarse a la pregunta concreta del usuario. La Historia de Tableau
+sigue publicada y disponible como pieza independiente si se quiere mostrar
+aparte en la memoria o la defensa.)
 """
 
 import streamlit as st
@@ -20,35 +31,28 @@ from respuestas import (
 from router_intencion import clasificar_mensaje, detectar_fecha, detectar_ticker
 from simulacion import analizar_comunicado_nuevo, consultar_dia_historico
 
-# URL real del dashboard (Historia 1, Tableau Public), con los parámetros
-# recomendados por Tableau para incrustar en un iframe (modo compacto, sin
-# la barra de navegación de Tableau Public alrededor).
-TABLEAU_EMBED_URL = (
-    "https://public.tableau.com/views/DashboardTFM-ImpactoComunicacionesenMercados/Resultadosdelmodelo"
-    "?:language=en-GB&:showVizHome=no&:embed=y"
-)
-
 
 # --------------------------------------------------------------------------
 # Lógica de procesamiento de cada mensaje (definida ANTES de usarse en el
-# cuerpo principal del script, para evitar NameError en tiempo de ejecución)
+# cuerpo principal del script, para evitar NameError en tiempo de ejecución).
+# Todas las funciones devuelven (texto, grafico_o_none).
 # --------------------------------------------------------------------------
 
-def _pedir_ticker() -> str:
-    return f"¿Sobre qué activo? Los disponibles son: {', '.join(ACTIVOS_CON_EVIDENCIA)}."
+def _pedir_ticker():
+    return f"¿Sobre qué activo? Los disponibles son: {', '.join(ACTIVOS_CON_EVIDENCIA)}.", None
 
 
-def _pedir_fecha() -> str:
-    return "¿Qué fecha? (formato AAAA-MM-DD, por ejemplo 2025-04-09, o \"9 de abril de 2025\")"
+def _pedir_fecha():
+    return "¿Qué fecha? (formato AAAA-MM-DD, por ejemplo 2025-04-09, o \"9 de abril de 2025\")", None
 
 
-def _ejecutar_consulta_historica(ticker: str, fecha: str, datos: dict) -> str:
+def _ejecutar_consulta_historica(ticker: str, fecha: str, datos: dict):
     if datos.get("modelo_info") is None:
         return ("No puedo consultar ese día ahora mismo: el modelo predictivo "
-                "(`modelo_evento_importante.pkl`) no está disponible en Drive todavía.")
+                "(`modelo_evento_importante.pkl`) no está disponible en Drive todavía."), None
     if datos.get("dataset_modelado") is None:
         return ("No puedo consultar ese día ahora mismo: `dataset_modelado.csv` "
-                "no está disponible en Drive todavía.")
+                "no está disponible en Drive todavía."), None
 
     try:
         resultado = consultar_dia_historico(
@@ -58,18 +62,18 @@ def _ejecutar_consulta_historica(ticker: str, fecha: str, datos: dict) -> str:
             modelo_info=datos["modelo_info"],
         )
     except ValueError as e:
-        return str(e)
+        return str(e), None
 
     return generar_respuesta_consulta_historica(resultado)
 
 
-def _ejecutar_simulacion(texto: str, ticker: str, datos: dict) -> str:
+def _ejecutar_simulacion(texto: str, ticker: str, datos: dict):
     if datos.get("modelo_info") is None:
         return ("No puedo simular ahora mismo: el modelo predictivo (`modelo_evento_importante.pkl`) "
-                "no está disponible en Drive todavía.")
+                "no está disponible en Drive todavía."), None
     if datos.get("dataset_consolidado_05") is None:
         return ("No puedo simular ahora mismo: `dataset_consolidado_05.csv` "
-                "(condiciones de mercado actuales) no está disponible en Drive todavía.")
+                "(condiciones de mercado actuales) no está disponible en Drive todavía."), None
 
     with st.spinner("Cargando el modelo de sentimiento (puede tardar unos segundos la primera vez)..."):
         tokenizer, modelo_sentimiento = cargar_modelo_sentimiento()
@@ -85,12 +89,12 @@ def _ejecutar_simulacion(texto: str, ticker: str, datos: dict) -> str:
             rangos_entrenamiento=datos.get("rangos_entrenamiento", {}),
         )
     except ValueError as e:
-        return str(e)
+        return str(e), None
 
     return generar_respuesta_simulacion(resultado)
 
 
-def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict) -> str:
+def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict):
     pendiente = conversacion["pendiente"]
 
     # --- Continuación de una simulación a la que le faltaba texto o ticker ---
@@ -114,7 +118,7 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict) -> 
             return _pedir_ticker()
 
         conversacion["pendiente"] = pendiente
-        return "¿Cuál es el texto del comunicado que quieres analizar?"
+        return "¿Cuál es el texto del comunicado que quieres analizar?", None
 
     # --- Continuación de una consulta histórica a la que le faltaba ticker o fecha ---
     if pendiente and pendiente.get("tipo") == "consulta_historica":
@@ -155,7 +159,7 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict) -> 
             "texto_comunicado": texto,
         }
         if texto is None:
-            return "¿Cuál es el texto del comunicado que quieres analizar?"
+            return "¿Cuál es el texto del comunicado que quieres analizar?", None
         return _pedir_ticker()
 
     if clasificacion["tipo"] == "consulta_historica":
@@ -181,7 +185,8 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict) -> 
 # --------------------------------------------------------------------------
 # Estado multi-conversación (estilo ChatGPT): varias conversaciones
 # independientes, cada una con su propio historial y su propio estado
-# "pendiente" (para las simulaciones/consultas a medio completar).
+# "pendiente" (para las simulaciones/consultas a medio completar). Cada
+# entrada del historial es (autor, texto, grafico_o_none).
 # --------------------------------------------------------------------------
 
 def _crear_conversacion() -> str:
@@ -277,6 +282,11 @@ with st.sidebar:
 
     for id_conv in reversed(st.session_state.orden_conversaciones):
         conv = st.session_state.conversaciones[id_conv]
+        # Las conversaciones vacías (recién creadas, sin ningún mensaje) no se
+        # listan aparte — ya se está viendo la activa, no hace falta un botón
+        # duplicado para volver a algo que ya tienes delante.
+        if not conv["historial"]:
+            continue
         es_activa = id_conv == st.session_state.conversacion_activa
         if st.button(
             conv["titulo"], key=f"sel_{id_conv}", use_container_width=True,
@@ -296,7 +306,9 @@ if datos["errores"]:
         for error in datos["errores"]:
             st.write(f"- {error}")
 
-col_chat, col_dashboard = st.columns([1, 1])
+# Chat centrado en una columna de ancho cómodo (no a todo el ancho de la
+# pantalla en modo "wide", para que se lea como un chat, no como una tabla).
+_, col_chat, _ = st.columns([1, 3, 1])
 
 with col_chat:
     tarjeta_chat = st.container(border=True)
@@ -304,18 +316,20 @@ with col_chat:
         conversacion = _conversacion_actual()
 
         def _enviar_mensaje(mensaje: str):
-            conversacion["historial"].append(("user", mensaje))
+            conversacion["historial"].append(("user", mensaje, None))
             # La primera vez que se manda un mensaje en una conversación nueva, se
             # usa como título en el panel lateral (recortado), igual que hace ChatGPT.
             if conversacion["titulo"] == "Nueva conversación":
                 conversacion["titulo"] = mensaje[:40] + ("…" if len(mensaje) > 40 else "")
             with st.spinner("Pensando..."):
-                respuesta = _procesar_mensaje(mensaje, datos, conversacion)
-            conversacion["historial"].append(("assistant", respuesta))
+                respuesta, grafico = _procesar_mensaje(mensaje, datos, conversacion)
+            conversacion["historial"].append(("assistant", respuesta, grafico))
 
-        for autor, texto in conversacion["historial"]:
+        for autor, texto, grafico in conversacion["historial"]:
             with st.chat_message(autor):
                 st.markdown(texto)
+                if grafico is not None:
+                    st.plotly_chart(grafico, use_container_width=True, config={"displayModeBar": False})
 
         if not conversacion["historial"]:
             st.info("Empieza escribiendo una pregunta abajo, o usa uno de los botones de preguntas rápidas.")
@@ -347,54 +361,28 @@ with col_chat:
             _enviar_mensaje(mensaje_usuario)
             st.rerun()
 
-with col_dashboard:
-    tarjeta_dashboard = st.container(border=True)
-    with tarjeta_dashboard:
-        tab_dashboard, tab_fuentes, tab_metodologia = st.tabs(["Dashboard", "Fuentes de datos", "Metodología"])
-
-        with tab_dashboard:
-            # Requiere que la Historia esté publicada con Tamaño = "Automático"
-            # en Tableau Desktop — con un tamaño fijo en píxeles, no cabe en una
-            # columna de la mitad del ancho de la página y se corta por los lados.
-            st.components.v1.iframe(TABLEAU_EMBED_URL, height=700, scrolling=True)
-
-        with tab_fuentes:
-            FUENTES = [
-                ("predicciones_hoy.csv", "Predicción diaria por activo (pipeline de producción)"),
-                ("dataset_consolidado_05.csv", "Condiciones de mercado en vivo, sin corte de fecha"),
-                ("dataset_modelado.csv", "Horizonte de entrenamiento congelado, usado como referencia"),
-                ("informe_shap_importancia.csv", "Importancia de variables (capítulo 6, sección 9.1)"),
-                ("informe_contribucion_familias.csv", "AUC por familia de variables (sección 9.2)"),
-                ("informe_auc_por_activo.csv", "AUC por activo (sección 9.3)"),
-                ("informe_comparacion_modelos.csv", "Comparación de modelos baseline (sección 6.1)"),
-                ("informe_cv_temporal.csv", "Validación cruzada temporal (sección 7)"),
-                ("modelo_evento_importante.pkl", "Modelo LightGBM serializado"),
-                ("twitter_roberta_finetuned.zip", "Modelo de sentimiento fine-tuned (capítulo 4)"),
-            ]
-            for nombre, descripcion in FUENTES:
-                st.markdown(
-                    f"""<div style="
-                            border: 1px solid #2D3340; border-radius: 8px;
-                            padding: 0.6rem 0.9rem; margin-bottom: 0.5rem;
-                            background-color: #1F2430;
-                        ">
-                        <code style="color: #A78BFA; font-size: 0.85rem;">{nombre}</code>
-                        <div style="color: #9CA3AF; font-size: 0.8rem; margin-top: 0.15rem;">{descripcion}</div>
-                    </div>""",
-                    unsafe_allow_html=True,
-                )
-
-        with tab_metodologia:
-            st.markdown(
-                "**Cómo funciona este agente**\n\n"
-                "Este agente audita la evidencia ya generada por el TFM — no predice el mercado. "
-                "El modelo predictivo (LightGBM) se entrenó sobre un horizonte histórico cerrado y "
-                "estima la probabilidad de un evento de volatilidad relevante, no la dirección del precio.\n\n"
-                "- **Consulta histórica**: reporta hechos ya registrados dentro del horizonte de estudio.\n"
-                "- **Simulación**: aplica el modelo, ya entrenado, a condiciones de mercado actuales "
-                "combinadas con el sentimiento de un comunicado nuevo.\n\n"
-                "En ambos casos, el modelo en sí permanece fijo — solo cambian los datos de entrada."
-            )
+    with st.expander("Fuentes de datos y metodología"):
+        st.markdown(
+            "**Cómo funciona este agente**\n\n"
+            "Este agente audita la evidencia ya generada por el TFM — no predice el mercado. "
+            "El modelo predictivo (LightGBM) se entrenó sobre un horizonte histórico cerrado y "
+            "estima la probabilidad de un evento de volatilidad relevante, no la dirección del precio.\n\n"
+            "- **Consulta histórica**: reporta hechos ya registrados dentro del horizonte de estudio.\n"
+            "- **Simulación**: aplica el modelo, ya entrenado, a condiciones de mercado actuales "
+            "combinadas con el sentimiento de un comunicado nuevo.\n\n"
+            "En ambos casos, el modelo en sí permanece fijo — solo cambian los datos de entrada.\n\n"
+            "**Datos que usa este agente**\n\n"
+            "- `predicciones_hoy.csv` — predicción diaria por activo (pipeline de producción)\n"
+            "- `dataset_consolidado_05.csv` — condiciones de mercado en vivo, sin corte de fecha\n"
+            "- `dataset_modelado.csv` — horizonte de entrenamiento congelado, usado como referencia\n"
+            "- `informe_shap_importancia.csv` — importancia de variables (capítulo 6, sección 9.1)\n"
+            "- `informe_contribucion_familias.csv` — AUC por familia de variables (sección 9.2)\n"
+            "- `informe_auc_por_activo.csv` — AUC por activo (sección 9.3)\n"
+            "- `informe_comparacion_modelos.csv` — comparación de modelos baseline (sección 6.1)\n"
+            "- `informe_cv_temporal.csv` — validación cruzada temporal (sección 7)\n"
+            "- `modelo_evento_importante.pkl` — modelo LightGBM serializado\n"
+            "- `twitter_roberta_finetuned.zip` — modelo de sentimiento fine-tuned (capítulo 4)"
+        )
 
 st.divider()
 st.markdown(
