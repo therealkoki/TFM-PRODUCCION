@@ -25,6 +25,7 @@ import streamlit as st
 from carga_datos import ACTIVOS_CON_EVIDENCIA, cargar_modelo_sentimiento, cargar_todo
 from respuestas import (
     generar_respuesta_consulta_historica,
+    generar_respuesta_evolucion_precio,
     generar_respuesta_pregunta_datos,
     generar_respuesta_simulacion,
 )
@@ -65,6 +66,10 @@ def _ejecutar_consulta_historica(ticker: str, fecha: str, datos: dict):
         return str(e), None
 
     return generar_respuesta_consulta_historica(resultado)
+
+
+def _ejecutar_evolucion_precio(ticker: str, datos: dict):
+    return generar_respuesta_evolucion_precio(ticker, datos)
 
 
 def _ejecutar_simulacion(texto: str, ticker: str, datos: dict):
@@ -145,6 +150,23 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict):
         conversacion["pendiente"] = pendiente
         return "¿Cuál es el texto del comunicado que quieres analizar?", None
 
+    # --- Continuación de una evolución de precio a la que le faltaba el activo ---
+    if pendiente and pendiente.get("tipo") == "evolucion_precio":
+        if pendiente.get("ticker") is None:
+            ticker_detectado = detectar_ticker(mensaje_usuario)
+            if ticker_detectado is None:
+                texto_mayus = mensaje_usuario.strip().upper()
+                if texto_mayus in ACTIVOS_CON_EVIDENCIA:
+                    ticker_detectado = texto_mayus
+            pendiente["ticker"] = ticker_detectado
+
+        if pendiente.get("ticker"):
+            conversacion["pendiente"] = None
+            return _ejecutar_evolucion_precio(pendiente["ticker"], datos)
+
+        conversacion["pendiente"] = pendiente
+        return _pedir_ticker()
+
     # --- Continuación de una consulta histórica a la que le faltaba ticker o fecha ---
     if pendiente and pendiente.get("tipo") == "consulta_historica":
         if pendiente.get("ticker") is None:
@@ -170,6 +192,13 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict):
 
     # --- Mensaje nuevo: clasificar desde cero ---
     clasificacion = clasificar_mensaje(mensaje_usuario)
+
+    if clasificacion["tipo"] == "evolucion_precio":
+        ticker = clasificacion["ticker"]
+        if ticker:
+            return _ejecutar_evolucion_precio(ticker, datos)
+        conversacion["pendiente"] = {"tipo": "evolucion_precio", "ticker": None}
+        return _pedir_ticker()
 
     if clasificacion["tipo"] == "simulacion":
         ticker = clasificacion["ticker"]
@@ -425,4 +454,3 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
-
