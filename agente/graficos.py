@@ -126,6 +126,15 @@ def grafico_simulacion(resultado: dict) -> go.Figure:
     return fig
 
 
+def calcular_serie_evolucion_precio(dataset_consolidado_05: pd.DataFrame, ticker: str) -> pd.DataFrame:
+    """Construye la serie con el índice de evolución relativa (base 100) para
+    un ticker — reutilizada tanto por el gráfico como por el texto que lo
+    acompaña, para no calcularla dos veces con el riesgo de que diverjan."""
+    df = dataset_consolidado_05[dataset_consolidado_05["ticker"] == ticker].sort_values("date").copy()
+    df["indice"] = 100 * np.exp(df["log_return"].cumsum())
+    return df
+
+
 def grafico_evolucion_precio(dataset_consolidado_05: pd.DataFrame, ticker: str) -> go.Figure:
     """
     Índice de evolución relativa (base 100), construido a partir de los
@@ -138,8 +147,7 @@ def grafico_evolucion_precio(dataset_consolidado_05: pd.DataFrame, ticker: str) 
     de forma que se puede leer la evolución relativa sin necesitar el precio
     real de partida.
     """
-    df = dataset_consolidado_05[dataset_consolidado_05["ticker"] == ticker].sort_values("date").copy()
-    df["indice"] = 100 * np.exp(df["log_return"].cumsum())
+    df = calcular_serie_evolucion_precio(dataset_consolidado_05, ticker)
 
     fig = go.Figure(go.Scatter(
         x=df["date"], y=df["indice"], mode="lines",
