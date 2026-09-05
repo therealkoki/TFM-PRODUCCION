@@ -56,6 +56,17 @@ AVISO_ENFOQUE = (
 )
 
 
+def _aviso_html(texto_aviso: str) -> str:
+    """Envuelve un aviso legal/metodológico en su propio bloque HTML, separado
+    del resto de la respuesta, en letra más pequeña y en gris — igual que
+    suelen mostrarse los avisos/notas al pie en la mayoría de asistentes de IA,
+    en vez de mezclado en el mismo párrafo que la respuesta."""
+    return (
+        f'<div style="color:#9CA3AF; font-size:0.8rem; margin-top:0.6rem; line-height:1.4;">'
+        f'{texto_aviso}</div>'
+    )
+
+
 # --------------------------------------------------------------------------
 # Utilidad: detectar TODOS los activos mencionados en un mensaje (a diferencia
 # de router_intencion.detectar_ticker, que solo devuelve el primero — aquí
@@ -217,7 +228,7 @@ def _plantilla_predicciones_hoy(datos: dict, tickers: list) -> str:
             intro = f"Nada llamativo hoy en **{fila['ticker']}**:"
         return (
             f"{intro} el modelo le da una probabilidad de evento importante del "
-            f"**{fila['probabilidad']:.1%}**, {estado} del umbral de decisión.\n\n{AVISO_ENFOQUE}"
+            f"**{fila['probabilidad']:.1%}**, {estado} del umbral de decisión." + "\n\n" + _aviso_html(AVISO_ENFOQUE)
         )
 
     ordenadas = sorted(filas, key=lambda f: f["probabilidad"], reverse=True)
@@ -241,7 +252,7 @@ def _plantilla_predicciones_hoy(datos: dict, tickers: list) -> str:
     lineas = [f"- **{f['ticker']}**: {f['probabilidad']:.1%}" + (" *(supera el umbral)*" if f.get("es_evento") else "")
               for f in ordenadas]
 
-    return intro + "\n\n" + "\n".join(lineas) + f"\n\n{AVISO_ENFOQUE}"
+    return intro + "\n\n" + "\n".join(lineas) + "\n\n" + _aviso_html(AVISO_ENFOQUE)
 
 
 def _plantilla_shap_importancia(datos: dict) -> str:
@@ -303,7 +314,7 @@ def _plantilla_auc_por_activo(datos: dict, tickers: list) -> str:
     else:
         intro = "Así se reparte el peso de cada familia de variables, activo por activo:"
 
-    return intro + "\n\n" + "\n".join(lineas) + f"\n\n{AVISO_ENFOQUE}"
+    return intro + "\n\n" + "\n".join(lineas) + "\n\n" + _aviso_html(AVISO_ENFOQUE)
 
 
 def _plantilla_comparacion_modelos(datos: dict) -> str:
@@ -353,7 +364,7 @@ def _plantilla_general(mensaje_usuario: str = "") -> str:
         "- **Comparación de modelos** y **robustez** en el tiempo\n"
         "- **Analizar un comunicado nuevo** (dime el texto y el activo)\n"
         "- **Consultar un día histórico concreto** dentro del horizonte del TFM\n\n"
-        "¿Por dónde empezamos? " + AVISO_ENFOQUE
+        "¿Por dónde empezamos?" + "\n\n" + _aviso_html(AVISO_ENFOQUE)
     )
 
     if not mensaje_usuario or es_saludo(mensaje_usuario):
@@ -487,9 +498,8 @@ def generar_respuesta_consulta_historica(resultado: dict):
             f"- Volatilidad (20d): **{resultado['volatility_20d_real']:.2%}**\n"
             f"- Comunicaciones ese día: **{resultado['n_comunicaciones_real']}** "
             f"(sentimiento agregado: {resultado['sentiment_real']:+.3f})\n"
-            f"- Probabilidad de referencia del modelo: **{resultado['probabilidad_modelo']:.1%}**\n\n"
-            f"{resultado['aviso']}"
-        )
+            f"- Probabilidad de referencia del modelo: **{resultado['probabilidad_modelo']:.1%}**"
+        ) + "\n\n" + _aviso_html(resultado["aviso"])
 
     try:
         grafico = graficos.grafico_consulta_historica(resultado)
@@ -527,10 +537,11 @@ def generar_respuesta_simulacion(resultado: dict):
             f"(positiva {s['prob_positive']:.3f} · negativa {s['prob_negative']:.3f}). "
             f"{interpretacion}\n\n"
             f"- Probabilidad de evento importante — antes: **{antes:.1%}** → después: **{despues:.1%}** "
-            f"({diferencia:+.1%})\n\n"
-            f"{resultado['aviso']}"
-            + (f"\n\n{aviso_distribucion}" if aviso_distribucion else "")
+            f"({diferencia:+.1%})"
         )
+        texto += "\n\n" + _aviso_html(resultado["aviso"])
+        if aviso_distribucion:
+            texto += "\n\n" + _aviso_html(aviso_distribucion)
 
     try:
         grafico = graficos.grafico_simulacion(resultado)
