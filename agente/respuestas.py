@@ -22,6 +22,7 @@ import os
 
 import pandas as pd
 
+import graficos
 from router_intencion import ACTIVOS_CON_EVIDENCIA, ALIAS_ACTIVOS
 
 GEMINI_MODEL = "gemini-flash-latest"
@@ -119,7 +120,7 @@ Reglas estrictas:
   merezcan una frase cada una.
 - Formato: usa Markdown. Pon en **negrita** las cifras y nombres clave. Si comparas 3 o más elementos,
   usa una lista con guiones en vez de una frase larga con comas. Empieza con un encabezado corto en
-  negrita que resuma el tema (p. ej. "**Predicción de hoy**").
+  negrita que resuma el tema (p. ej. "**Predicción de hoy**"). No uses emojis.
 - No te presentes como un predictor de mercado: el TFM demuestra que la relación entre comunicaciones
   y mercado es modesta y heterogénea — encájalo con naturalidad si el tema lo pide, sin forzarlo.
 
@@ -142,7 +143,7 @@ Reglas estrictas:
 - Cuenta primero el hecho (hubo o no evento, hubo o no anomalía) y solo después, con matiz, la
   probabilidad del modelo — nunca al revés.
 - Formato: usa Markdown. Un encabezado corto en negrita, y una lista con guiones para las cifras
-  clave (retorno, volatilidad, sentimiento, probabilidad del modelo).
+  clave (retorno, volatilidad, sentimiento, probabilidad del modelo). No uses emojis.
 - Máximo 4-5 frases antes del aviso final obligatorio.
 - Termina SIEMPRE incluyendo, tal cual y sin parafrasear, este aviso: "{resultado['aviso']}"
 
@@ -172,7 +173,7 @@ Reglas estrictas:
 - No te limites a repetir los números: señala si el cambio es grande o pequeño en su contexto (recuerda
   que la comunicación pesa poco frente a las variables financieras en este modelo), y qué dirección tomó.
 - Formato: usa Markdown. Un encabezado corto en negrita con el activo, y una lista con guiones para
-  sentimiento y probabilidad antes/después.
+  sentimiento y probabilidad antes/después. No uses emojis.
 - Máximo 3-4 frases antes del aviso final obligatorio.
 - Termina SIEMPRE incluyendo, tal cual y sin parafrasear, este aviso: "{resultado['aviso']}"
 
@@ -218,7 +219,7 @@ def _plantilla_predicciones_hoy(datos: dict, tickers: list) -> str:
     activos_con_evento = [f["ticker"] for f in filas if f.get("es_evento")]
     calificativo = "bajas en general" if mas_alta["probabilidad"] < 0.3 else "dispares"
 
-    lineas = [f"- **{f['ticker']}**: {f['probabilidad']:.1%}" + (" ⚠️ *supera el umbral*" if f.get("es_evento") else "")
+    lineas = [f"- **{f['ticker']}**: {f['probabilidad']:.1%}" + (" *(supera el umbral)*" if f.get("es_evento") else "")
               for f in ordenadas]
 
     conclusion = (
@@ -352,12 +353,46 @@ def _construir_texto_datos_para_gemini(datos: dict, tema: str, tickers: list) ->
 # Puntos de entrada
 # --------------------------------------------------------------------------
 
-def generar_respuesta_pregunta_datos(mensaje_usuario: str, clasificacion: dict, datos: dict) -> str:
+def _generar_grafico_pregunta_datos(tema: str, tickers: list, datos: dict):
+    """
+    Construye el gráfico de Plotly correspondiente al tema de la pregunta, o
+    None si el tema no tiene gráfico asociado, o si el informe no está
+    disponible. El gráfico es un complemento visual — si algo falla al
+    construirlo, se captura la excepción y simplemente no se muestra ningún
+    gráfico, sin que eso rompa la respuesta de texto (que ya se generó aparte).
+    """
+    try:
+        if tema == "predicciones_hoy":
+            df = datos.get("predicciones_hoy")
+            return graficos.grafico_predicciones_hoy(df, tickers) if df is not None else None
+        if tema == "shap_importancia":
+            df = datos["informes"].get("shap_importancia")
+            return graficos.grafico_shap_importancia(df) if df is not None else None
+        if tema == "contribucion_familias":
+            df = datos["informes"].get("contribucion_familias")
+            return graficos.grafico_contribucion_familias(df) if df is not None else None
+        if tema == "auc_por_activo":
+            df = datos["informes"].get("auc_por_activo")
+            return graficos.grafico_auc_por_activo(df, tickers) if df is not None else None
+        if tema == "comparacion_modelos":
+            df = datos["informes"].get("comparacion_modelos")
+            return graficos.grafico_comparacion_modelos(df) if df is not None else None
+        if tema == "cv_temporal":
+            df = datos["informes"].get("cv_temporal")
+            return graficos.grafico_cv_temporal(df) if df is not None else None
+    except Exception:
+        return None
+    return None
+
+
+def generar_respuesta_pregunta_datos(mensaje_usuario: str, clasificacion: dict, datos: dict):
+    """Devuelve (texto, grafico_o_none)."""
     activo_no_soportado = clasificacion.get("activo_no_soportado")
     if activo_no_soportado:
         return (
             f"**{activo_no_soportado.capitalize()}** no es uno de los 6 activos con evidencia "
-            f"suficiente en este TFM. Los disponibles son: **{', '.join(ACTIVOS_CON_EVIDENCIA)}**."
+            f"suficiente en este TFM. Los disponibles son: **{', '.join(ACTIVOS_CON_EVIDENCIA)}**.",
+            None,
         )
 
     tema = clasificacion.get("tema")
@@ -366,7 +401,7 @@ def generar_respuesta_pregunta_datos(mensaje_usuario: str, clasificacion: dict, 
     )
 
     if tema is None and not tickers:
-        return _plantilla_general()
+        return _plantilla_general(), None
 
     texto_plantilla = _construir_texto_datos_para_gemini(datos, tema, tickers)
 
@@ -375,16 +410,18 @@ def generar_respuesta_pregunta_datos(mensaje_usuario: str, clasificacion: dict, 
     except Exception:
         respuesta = texto_plantilla
 
-    return _con_cita_fuente(respuesta, tema)
+    grafico = _generar_grafico_pregunta_datos(tema, tickers, datos)
+    return _con_cita_fuente(respuesta, tema), grafico
 
 
-def generar_respuesta_consulta_historica(resultado: dict) -> str:
+def generar_respuesta_consulta_historica(resultado: dict):
+    """Devuelve (texto, grafico_o_none)."""
     try:
-        return _llamar_gemini(_prompt_consulta_historica(resultado))
+        texto = _llamar_gemini(_prompt_consulta_historica(resultado))
     except Exception:
-        evento_texto = "✅ **SÍ** hubo" if resultado["evento_importante_real"] else "❌ **NO** hubo"
+        evento_texto = "**SÍ** hubo" if resultado["evento_importante_real"] else "**NO** hubo"
         anomalia_texto = "**sí** se detectó anomalía (capítulo 5)" if resultado["is_anomaly_real"] else "no se detectó anomalía"
-        return (
+        texto = (
             f"**Consulta histórica — {resultado['ticker']}, {resultado['fecha']}**\n\n"
             f"{evento_texto} un evento importante real ese día; {anomalia_texto}.\n\n"
             f"- Retorno: **{resultado['log_return_real']:+.2%}**\n"
@@ -395,14 +432,22 @@ def generar_respuesta_consulta_historica(resultado: dict) -> str:
             f"{resultado['aviso']}"
         )
 
-
-def generar_respuesta_simulacion(resultado: dict) -> str:
     try:
-        return _llamar_gemini(_prompt_simulacion(resultado))
+        grafico = graficos.grafico_consulta_historica(resultado)
+    except Exception:
+        grafico = None
+
+    return texto, grafico
+
+
+def generar_respuesta_simulacion(resultado: dict):
+    """Devuelve (texto, grafico_o_none)."""
+    try:
+        texto = _llamar_gemini(_prompt_simulacion(resultado))
     except Exception:
         s = resultado["sentimiento"]
         aviso_distribucion = resultado.get("aviso_distribucion")
-        return (
+        texto = (
             f"**Simulación — {resultado['ticker']}**\n\n"
             f"*\"{resultado['texto_original']}\"*\n\n"
             f"- Sentimiento detectado: **{s['etiqueta']}** "
@@ -413,3 +458,10 @@ def generar_respuesta_simulacion(resultado: dict) -> str:
             f"{resultado['aviso']}"
             + (f"\n\n{aviso_distribucion}" if aviso_distribucion else "")
         )
+
+    try:
+        grafico = graficos.grafico_simulacion(resultado)
+    except Exception:
+        grafico = None
+
+    return texto, grafico
