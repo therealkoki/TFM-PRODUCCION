@@ -89,6 +89,43 @@ ACTIVOS_NO_SOPORTADOS_COMUNES = [
 ]
 
 
+PALABRAS_SALUDO = ["hola", "buenas", "buenos días", "buenas tardes", "buenas noches", "hey", "qué tal", "que tal"]
+PALABRAS_CORTESIA_CIERRE = ["gracias", "vale", "ok", "okay", "genial", "perfecto", "de acuerdo",
+                            "adiós", "adios", "chao", "hasta luego", "nos vemos"]
+
+
+def es_saludo(mensaje: str) -> bool:
+    texto = mensaje.lower().strip().strip("!¡.,?¿")
+    return any(texto == p or texto.startswith(p + " ") for p in PALABRAS_SALUDO)
+
+
+def es_cortesia_cierre(mensaje: str) -> bool:
+    texto = mensaje.lower().strip().strip("!¡.,?¿")
+    return len(texto.split()) <= 4 and any(p in texto for p in PALABRAS_CORTESIA_CIERRE)
+
+
+def hay_senal_de_tema_nuevo(mensaje: str, tipo_pendiente: str) -> bool:
+    """
+    Comprueba si un mensaje nuevo, llegado mientras el agente esperaba
+    completar una simulación o consulta histórica (ticker/fecha/texto que
+    faltaba), en realidad señala con claridad que el usuario quiere abandonar
+    eso y pedir otra cosa distinta — para no quedarse insistiendo para
+    siempre con la misma pregunta si el usuario simplemente cambió de tema
+    (un saludo, un cierre de cortesía, otra simulación, otra consulta
+    histórica, o una pregunta sobre un informe concreto).
+    """
+    if es_saludo(mensaje) or es_cortesia_cierre(mensaje):
+        return True
+    texto = mensaje.lower()
+    if tipo_pendiente != "simulacion" and any(palabra in texto for palabra in PALABRAS_SIMULACION):
+        return True
+    if tipo_pendiente != "consulta_historica" and any(palabra in texto for palabra in PALABRAS_CONSULTA_HISTORICA):
+        return True
+    if detectar_tema_pregunta_datos(mensaje) is not None:
+        return True
+    return False
+
+
 def detectar_activo_no_soportado(mensaje: str) -> str | None:
     """Si el mensaje menciona un activo/empresa habitual que NO está entre los
     6 soportados, y no menciona ninguno de los 6 sí soportados, devuelve el
