@@ -29,7 +29,14 @@ from respuestas import (
     generar_respuesta_pregunta_datos,
     generar_respuesta_simulacion,
 )
-from router_intencion import clasificar_mensaje, detectar_fecha, detectar_ticker, hay_senal_de_tema_nuevo
+from router_intencion import (
+    clasificar_mensaje,
+    detectar_fecha,
+    detectar_rango_fechas_explicito,
+    detectar_ticker,
+    es_todo_el_historico,
+    hay_senal_de_tema_nuevo,
+)
 from simulacion import analizar_comunicado_nuevo, consultar_dia_historico
 
 
@@ -45,6 +52,15 @@ def _pedir_ticker():
 
 def _pedir_fecha():
     return "¿Qué fecha? (formato AAAA-MM-DD, por ejemplo 2025-04-09, o \"9 de abril de 2025\")", None
+
+
+def _pedir_rango_fechas():
+    return (
+        "¿Qué periodo quieres ver? Indícalo con las dos fechas completas, por ejemplo "
+        "\"desde 2025-01-01 hasta 2025-06-30\" (también vale \"desde el 1 de enero de 2025 "
+        "hasta el 30 de junio de 2025\", con el año en las dos fechas) — o escribe "
+        "\"todo el histórico\" si prefieres verlo completo."
+    ), None
 
 
 def _ejecutar_consulta_historica(ticker: str, fecha: str, datos: dict):
@@ -68,8 +84,8 @@ def _ejecutar_consulta_historica(ticker: str, fecha: str, datos: dict):
     return generar_respuesta_consulta_historica(resultado)
 
 
-def _ejecutar_evolucion_precio(ticker: str, datos: dict):
-    return generar_respuesta_evolucion_precio(ticker, datos)
+def _ejecutar_evolucion_precio(ticker: str, datos: dict, fecha_inicio: str = None, fecha_fin: str = None):
+    return generar_respuesta_evolucion_precio(ticker, datos, fecha_inicio, fecha_fin)
 
 
 def _ejecutar_simulacion(texto: str, ticker: str, datos: dict):
@@ -117,6 +133,14 @@ def _debe_abandonar_pendiente(mensaje_usuario: str, pendiente: dict) -> bool:
             and pendiente.get("fecha") is None
             and not any(caracter.isdigit() for caracter in mensaje_usuario)):
         return True
+    # Mismo razonamiento para cuando se espera el periodo de una evolución de
+    # precio: una respuesta genuina siempre lleva dígitos (fechas) o dice
+    # "todo el histórico" — si no es ninguna de las dos cosas, se abandona.
+    if (pendiente.get("tipo") == "evolucion_precio"
+            and pendiente.get("ticker") is not None
+            and not es_todo_el_historico(mensaje_usuario)
+            and not any(caracter.isdigit() for caracter in mensaje_usuario)):
+        return True
     return False
 
 
@@ -150,7 +174,9 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict):
         conversacion["pendiente"] = pendiente
         return "¿Cuál es el texto del comunicado que quieres analizar?", None
 
-    # --- Continuación de una evolución de precio a la que le faltaba el activo ---
+    # --- Continuación de una evolución de precio: falta el activo, o falta
+    # confirmar el periodo (siempre se pregunta explícitamente, nunca se
+    # adivina de una fecha suelta mencionada de pasada) ---
     if pendiente and pendiente.get("tipo") == "evolucion_precio":
         if pendiente.get("ticker") is None:
             ticker_detectado = detectar_ticker(mensaje_usuario)
@@ -159,13 +185,30 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict):
                 if texto_mayus in ACTIVOS_CON_EVIDENCIA:
                     ticker_detectado = texto_mayus
             pendiente["ticker"] = ticker_detectado
+            if pendiente["ticker"] is None:
+                conversacion["pendiente"] = pendiente
+                return _pedir_ticker()
+            conversacion["pendiente"] = pendiente
+            return _pedir_rango_fechas()
 
-        if pendiente.get("ticker"):
+        # Ya hay ticker: este mensaje debe responder a "¿qué periodo quieres?"
+        if es_todo_el_historico(mensaje_usuario):
             conversacion["pendiente"] = None
             return _ejecutar_evolucion_precio(pendiente["ticker"], datos)
 
+        fecha_inicio, fecha_fin = detectar_rango_fechas_explicito(mensaje_usuario)
+        if fecha_inicio and fecha_fin:
+            conversacion["pendiente"] = None
+            return _ejecutar_evolucion_precio(pendiente["ticker"], datos, fecha_inicio, fecha_fin)
+
+        # No se entendió como rango claro ni como "todo" — se vuelve a pedir,
+        # sin adivinar nada, tal como se decidió para evitar ambigüedad.
         conversacion["pendiente"] = pendiente
-        return _pedir_ticker()
+        return (
+            "No he entendido bien el periodo. Indica las dos fechas completas (con el año en "
+            "ambas), por ejemplo \"desde 2025-01-01 hasta 2025-06-30\", o escribe "
+            "\"todo el histórico\" para verlo completo."
+        ), None
 
     # --- Continuación de una consulta histórica a la que le faltaba ticker o fecha ---
     if pendiente and pendiente.get("tipo") == "consulta_historica":
@@ -195,9 +238,9 @@ def _procesar_mensaje(mensaje_usuario: str, datos: dict, conversacion: dict):
 
     if clasificacion["tipo"] == "evolucion_precio":
         ticker = clasificacion["ticker"]
+        conversacion["pendiente"] = {"tipo": "evolucion_precio", "ticker": ticker}
         if ticker:
-            return _ejecutar_evolucion_precio(ticker, datos)
-        conversacion["pendiente"] = {"tipo": "evolucion_precio", "ticker": None}
+            return _pedir_rango_fechas()
         return _pedir_ticker()
 
     if clasificacion["tipo"] == "simulacion":
