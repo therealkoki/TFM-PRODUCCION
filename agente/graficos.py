@@ -126,16 +126,28 @@ def grafico_simulacion(resultado: dict) -> go.Figure:
     return fig
 
 
-def calcular_serie_evolucion_precio(dataset_consolidado_05: pd.DataFrame, ticker: str) -> pd.DataFrame:
-    """Construye la serie con el índice de evolución relativa (base 100) para
+def calcular_serie_evolucion_precio(dataset_consolidado_05: pd.DataFrame, ticker: str,
+                                     fecha_inicio: str = None, fecha_fin: str = None) -> pd.DataFrame:
+    """
+    Construye la serie con el índice de evolución relativa (base 100) para
     un ticker — reutilizada tanto por el gráfico como por el texto que lo
-    acompaña, para no calcularla dos veces con el riesgo de que diverjan."""
+    acompaña, para no calcularla dos veces con el riesgo de que diverjan.
+
+    Si se pasan fecha_inicio/fecha_fin, se recorta la serie a ese rango ANTES
+    de calcular el índice, para que el 100 quede justo al principio de la
+    ventana pedida (no arrastrando la tendencia acumulada de antes del rango).
+    """
     df = dataset_consolidado_05[dataset_consolidado_05["ticker"] == ticker].sort_values("date").copy()
+    if fecha_inicio:
+        df = df[df["date"] >= pd.Timestamp(fecha_inicio)]
+    if fecha_fin:
+        df = df[df["date"] <= pd.Timestamp(fecha_fin)]
     df["indice"] = 100 * np.exp(df["log_return"].cumsum())
     return df
 
 
-def grafico_evolucion_precio(dataset_consolidado_05: pd.DataFrame, ticker: str) -> go.Figure:
+def grafico_evolucion_precio(dataset_consolidado_05: pd.DataFrame, ticker: str,
+                              fecha_inicio: str = None, fecha_fin: str = None) -> go.Figure:
     """
     Índice de evolución relativa (base 100), construido a partir de los
     log_return diarios de dataset_consolidado_05.
@@ -147,7 +159,7 @@ def grafico_evolucion_precio(dataset_consolidado_05: pd.DataFrame, ticker: str) 
     de forma que se puede leer la evolución relativa sin necesitar el precio
     real de partida.
     """
-    df = calcular_serie_evolucion_precio(dataset_consolidado_05, ticker)
+    df = calcular_serie_evolucion_precio(dataset_consolidado_05, ticker, fecha_inicio, fecha_fin)
 
     fig = go.Figure(go.Scatter(
         x=df["date"], y=df["indice"], mode="lines",
