@@ -352,7 +352,13 @@ with col_chat:
 
         for autor, texto, grafico in conversacion["historial"]:
             with st.chat_message(autor):
-                st.markdown(texto)
+                # unsafe_allow_html=True: necesario para que los avisos legales
+                # se vean como párrafo aparte en gris (ver _aviso_html en
+                # respuestas.py). Riesgo aceptado: cada sesión es privada (no
+                # hay usuarios compartiendo la misma vista), y los prompts de
+                # Gemini ya incluyen una defensa explícita contra instrucciones
+                # escondidas que intenten hacerle generar HTML arbitrario.
+                st.markdown(texto, unsafe_allow_html=True)
                 if grafico is not None:
                     st.plotly_chart(grafico, use_container_width=True, config={"displayModeBar": False})
 
@@ -419,3 +425,4 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
