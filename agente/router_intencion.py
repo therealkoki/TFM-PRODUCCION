@@ -188,6 +188,82 @@ def extraer_texto_comunicado(mensaje: str) -> str | None:
     return None
 
 
+def detectar_todas_las_fechas(mensaje: str) -> list:
+    """Encuentra TODAS las fechas válidas del mensaje (ISO o naturales en
+    español), ordenadas cronológicamente — a diferencia de detectar_fecha(),
+    que solo devuelve la primera. Se usa para detectar rangos ("del X al Y")."""
+    import datetime
+
+    fechas = []
+
+    for anio, mes, dia in re.findall(r"\b(\d{4})-(\d{2})-(\d{2})\b", mensaje):
+        try:
+            fechas.append(datetime.date(int(anio), int(mes), int(dia)).isoformat())
+        except ValueError:
+            pass
+
+    for dia, mes_texto, anio in re.findall(
+        r"\b(\d{1,2})\s+de\s+([a-záéíóú]+)\s+de\s+(\d{4})\b", mensaje.lower()
+    ):
+        mes = MESES_ES.get(mes_texto)
+        if mes:
+            try:
+                fechas.append(datetime.date(int(anio), mes, int(dia)).isoformat())
+            except ValueError:
+                pass
+
+    return sorted(set(fechas))
+
+
+PALABRAS_TODO_HISTORICO = [
+    "todo el histórico", "todo el historico", "todo el periodo", "todo el período",
+    "histórico completo", "historico completo", "desde el principio",
+]
+
+
+def es_todo_el_historico(mensaje: str) -> bool:
+    texto = mensaje.lower().strip().strip("!¡.,?¿")
+    if any(p in texto for p in PALABRAS_TODO_HISTORICO):
+        return True
+    # "todo" a secas solo cuenta si es el mensaje completo (o casi), no si
+    # aparece de paso dentro de una frase más larga sobre otra cosa.
+    return texto in ("todo", "todo el", "completo", "todo completo")
+
+
+def detectar_rango_fechas_explicito(mensaje: str) -> tuple:
+    """
+    Para cuando se le pide explícitamente al usuario el periodo (después de
+    _pedir_rango_fechas()): exige DOS fechas completas y válidas en el mismo
+    mensaje para aceptar un rango — nunca infiere un año compartido ni asume
+    "desde esa fecha hasta hoy" con una sola fecha, para evitar ambigüedad.
+    Devuelve (fecha_inicio, fecha_fin) si hay exactamente 2 fechas válidas
+    (ordenadas), o (None, None) si no encuentra un rango claro (en cuyo caso
+    hay que volver a pedirlo).
+    """
+    fechas = detectar_todas_las_fechas(mensaje)
+    if len(fechas) == 2:
+        return fechas[0], fechas[1]
+    return None, None
+
+
+def detectar_rango_fechas(mensaje: str) -> tuple:
+    """
+    Busca un rango de fechas en el mensaje (p. ej. "del 1 de enero al 1 de
+    marzo de 2025", o simplemente dos fechas sueltas). Devuelve
+    (fecha_inicio, fecha_fin), cualquiera de las dos puede ser None:
+    - Si hay 2+ fechas: la más antigua y la más reciente.
+    - Si hay solo 1 fecha: se interpreta como "desde esa fecha hasta hoy"
+      (fecha_inicio=esa fecha, fecha_fin=None).
+    - Si no hay ninguna: (None, None), se usará el histórico completo.
+    """
+    fechas = detectar_todas_las_fechas(mensaje)
+    if len(fechas) >= 2:
+        return fechas[0], fechas[-1]
+    if len(fechas) == 1:
+        return fechas[0], None
+    return None, None
+
+
 def detectar_fecha(mensaje: str) -> str | None:
     """
     Busca una fecha en el mensaje, en formato ISO (2025-04-09) o en formato
