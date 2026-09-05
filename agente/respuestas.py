@@ -23,7 +23,7 @@ import os
 import pandas as pd
 
 import graficos
-from router_intencion import ACTIVOS_CON_EVIDENCIA, ALIAS_ACTIVOS
+from router_intencion import ACTIVOS_CON_EVIDENCIA, ALIAS_ACTIVOS, es_cortesia_cierre, es_saludo
 
 GEMINI_MODEL = "gemini-flash-latest"
 TIMEOUT_GEMINI_SEGUNDOS = 15
@@ -342,23 +342,8 @@ def _plantilla_matriz_confusion(datos: dict) -> str:
     return "**Matriz de confusión según el umbral de decisión**\n\n" + "\n".join(lineas)
 
 
-PALABRAS_SALUDO = ["hola", "buenas", "buenos días", "buenas tardes", "buenas noches", "hey", "qué tal", "que tal"]
-PALABRAS_CORTESIA_CIERRE = ["gracias", "vale", "ok", "okay", "genial", "perfecto", "de acuerdo",
-                            "adiós", "adios", "chao", "hasta luego", "nos vemos"]
-
-
-def _es_saludo(mensaje: str) -> bool:
-    texto = mensaje.lower().strip().strip("!¡.,?¿")
-    return any(texto == p or texto.startswith(p + " ") for p in PALABRAS_SALUDO)
-
-
-def _es_cortesia_cierre(mensaje: str) -> bool:
-    texto = mensaje.lower().strip().strip("!¡.,?¿")
-    return len(texto.split()) <= 4 and any(p in texto for p in PALABRAS_CORTESIA_CIERRE)
-
-
 def _plantilla_general(mensaje_usuario: str = "") -> str:
-    if _es_cortesia_cierre(mensaje_usuario):
+    if es_cortesia_cierre(mensaje_usuario):
         return "¡De nada! Aquí sigo si te surge cualquier otra pregunta sobre el TFM."
 
     menu = (
@@ -371,7 +356,7 @@ def _plantilla_general(mensaje_usuario: str = "") -> str:
         "¿Por dónde empezamos? " + AVISO_ENFOQUE
     )
 
-    if not mensaje_usuario or _es_saludo(mensaje_usuario):
+    if not mensaje_usuario or es_saludo(mensaje_usuario):
         intro = (
             "¡Hola! Soy el agente del TFM sobre el impacto de comunicaciones públicas "
             "(Trump, Musk, Fed) en mercados financieros. Puedo ayudarte con esto:\n\n"
