@@ -38,6 +38,16 @@ PALABRAS_SIMULACION = [
     "nuevo tuit", "nuevo tweet", "nuevo comunicado",
 ]
 
+# Para "evolución del precio" se exige una palabra de evolución/movimiento Y
+# una de precio/cotización a la vez — así "evolución de la probabilidad" o
+# "cómo se ha movido el mercado en general" no disparan esto por error.
+PALABRAS_EVOLUCION = [
+    "evolución", "evolucion", "trayectoria", "histórico de precio", "historico de precio",
+    "cómo se ha movido", "como se ha movido", "cómo ha ido", "como ha ido", "gráfico de precio",
+    "grafico de precio", "serie temporal",
+]
+PALABRAS_PRECIO = ["precio", "cotización", "cotizacion", "valor del activo"]
+
 # Palabras que indican una consulta sobre un día histórico ya conocido (Modo A):
 # se responde con el hecho ya calculado (evento_importante, is_anomaly reales de
 # ese día), no con una predicción nueva del modelo. Se comprueba ANTES que
@@ -220,6 +230,16 @@ def detectar_tema_pregunta_datos(mensaje: str) -> str | None:
     return None
 
 
+def es_pregunta_evolucion_precio(mensaje: str) -> bool:
+    texto = mensaje.lower()
+    if not any(p in texto for p in PALABRAS_EVOLUCION):
+        return False
+    # Basta con la palabra de evolución + un ticker reconocido (p. ej.
+    # "evolución de Bitcoin"), o con la palabra de evolución + "precio"/
+    # "cotización" aunque no se mencione ningún ticker en esa misma frase.
+    return any(p in texto for p in PALABRAS_PRECIO) or detectar_ticker(mensaje) is not None
+
+
 def clasificar_mensaje(mensaje: str) -> dict:
     """
     Punto de entrada del router. Devuelve un dict con:
@@ -257,6 +277,12 @@ def clasificar_mensaje(mensaje: str) -> dict:
             "tipo": "consulta_historica",
             "ticker": ticker,
             "fecha": fecha,
+        }
+
+    if es_pregunta_evolucion_precio(mensaje):
+        return {
+            "tipo": "evolucion_precio",
+            "ticker": ticker,
         }
 
     return {
