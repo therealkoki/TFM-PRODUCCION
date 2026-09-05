@@ -208,32 +208,37 @@ def _plantilla_predicciones_hoy(datos: dict, tickers: list) -> str:
     if len(filas) == 1:
         fila = filas[0]
         estado = "**por encima**" if fila.get("es_evento") else "por debajo"
+        if fila.get("es_evento"):
+            intro = f"Ojo con **{fila['ticker']}** hoy —"
+        else:
+            intro = f"Nada llamativo hoy en **{fila['ticker']}**:"
         return (
-            f"**Predicción de hoy para {fila['ticker']}**\n\n"
-            f"Probabilidad de evento importante: **{fila['probabilidad']:.1%}** "
-            f"({estado} del umbral de decisión).\n\n{AVISO_ENFOQUE}"
+            f"{intro} el modelo le da una probabilidad de evento importante del "
+            f"**{fila['probabilidad']:.1%}**, {estado} del umbral de decisión.\n\n{AVISO_ENFOQUE}"
         )
 
     ordenadas = sorted(filas, key=lambda f: f["probabilidad"], reverse=True)
     mas_alta, mas_baja = ordenadas[0], ordenadas[-1]
     activos_con_evento = [f["ticker"] for f in filas if f.get("es_evento")]
-    calificativo = "bajas en general" if mas_alta["probabilidad"] < 0.3 else "dispares"
+
+    if not activos_con_evento:
+        intro = (
+            f"He mirado la predicción de hoy para los {len(filas)} activos y el panorama está "
+            f"bastante tranquilo — nada se acerca al umbral de decisión. "
+            f"**{mas_alta['ticker']}** es el que más se mueve ({mas_alta['probabilidad']:.1%}), "
+            f"y **{mas_baja['ticker']}** el más plano ({mas_baja['probabilidad']:.1%})."
+        )
+    else:
+        intro = (
+            f"Aquí sí hay algo que merece atención: "
+            f"**{', '.join(activos_con_evento)}** supera{'n' if len(activos_con_evento) > 1 else ''} "
+            f"hoy el umbral de decisión, algo que no pasa todos los días."
+        )
 
     lineas = [f"- **{f['ticker']}**: {f['probabilidad']:.1%}" + (" *(supera el umbral)*" if f.get("es_evento") else "")
               for f in ordenadas]
 
-    conclusion = (
-        "Ninguna supera el umbral de decisión, así que no se prevé ningún evento hoy."
-        if not activos_con_evento
-        else f"**{', '.join(activos_con_evento)}** sí supera{'n' if len(activos_con_evento) > 1 else ''} el umbral de decisión hoy."
-    )
-
-    return (
-        f"**Predicción de hoy** — probabilidades {calificativo} "
-        f"(la más alta: **{mas_alta['ticker']}** {mas_alta['probabilidad']:.1%}; "
-        f"la más baja: **{mas_baja['ticker']}** {mas_baja['probabilidad']:.1%})\n\n"
-        + "\n".join(lineas) + f"\n\n{conclusion}\n\n{AVISO_ENFOQUE}"
-    )
+    return intro + "\n\n" + "\n".join(lineas) + f"\n\n{AVISO_ENFOQUE}"
 
 
 def _plantilla_shap_importancia(datos: dict) -> str:
@@ -264,19 +269,38 @@ def _plantilla_auc_por_activo(datos: dict, tickers: list) -> str:
     if df is None:
         return "El informe de AUC por activo todavía no está disponible."
     tickers = tickers or list(df["ticker"].unique())
-    lineas = []
+    filas_encontradas = []
     for ticker in tickers:
         fila = df[df["ticker"] == ticker]
-        if fila.empty:
-            continue
-        fila = fila.iloc[0]
-        lineas.append(
-            f"- **{ticker}**: solo financieras {fila['auc_financieras']:.3f} · "
-            f"solo comunicación {fila['auc_comunicacion']:.3f} · ambas **{fila['auc_ambas']:.3f}**"
+        if not fila.empty:
+            filas_encontradas.append(fila.iloc[0])
+    if not filas_encontradas:
+        return "No he encontrado datos de AUC para lo que preguntas."
+
+    lineas = [
+        f"- **{f['ticker']}**: solo financieras {f['auc_financieras']:.3f} · "
+        f"solo comunicación {f['auc_comunicacion']:.3f} · ambas **{f['auc_ambas']:.3f}**"
+        for f in filas_encontradas
+    ]
+
+    if len(filas_encontradas) == 2:
+        a, b = filas_encontradas
+        mejor_comunicacion = a if a["auc_comunicacion"] > b["auc_comunicacion"] else b
+        peor_comunicacion = b if mejor_comunicacion is a else a
+        diferencia = mejor_comunicacion["auc_comunicacion"] - peor_comunicacion["auc_comunicacion"]
+        intro = (
+            f"Buena pregunta — la diferencia está en cuánto se acerca el AUC de \"solo comunicación\" "
+            f"al de \"solo financieras\" en cada activo. En **{mejor_comunicacion['ticker']}** la brecha "
+            f"es pequeña ({mejor_comunicacion['auc_comunicacion']:.3f} frente a "
+            f"{mejor_comunicacion['auc_financieras']:.3f}), así que el sentimiento aporta casi tanto como "
+            f"el histórico de precios. En **{peor_comunicacion['ticker']}**, en cambio, la comunicación se "
+            f"queda mucho más atrás ({peor_comunicacion['auc_comunicacion']:.3f} frente a "
+            f"{peor_comunicacion['auc_financieras']:.3f}) — una diferencia de {diferencia:.3f} puntos de AUC."
         )
-    if not lineas:
-        return "No encontré AUC por activo para lo que preguntas."
-    return "**AUC por activo**\n\n" + "\n".join(lineas) + f"\n\n{AVISO_ENFOQUE}"
+    else:
+        intro = "Así se reparte el peso de cada familia de variables, activo por activo:"
+
+    return intro + "\n\n" + "\n".join(lineas) + f"\n\n{AVISO_ENFOQUE}"
 
 
 def _plantilla_comparacion_modelos(datos: dict) -> str:
@@ -419,11 +443,20 @@ def generar_respuesta_consulta_historica(resultado: dict):
     try:
         texto = _llamar_gemini(_prompt_consulta_historica(resultado))
     except Exception:
-        evento_texto = "**SÍ** hubo" if resultado["evento_importante_real"] else "**NO** hubo"
-        anomalia_texto = "**sí** se detectó anomalía (capítulo 5)" if resultado["is_anomaly_real"] else "no se detectó anomalía"
+        if resultado["evento_importante_real"]:
+            intro = (
+                f"Sí, **{resultado['fecha']}** fue un día real de evento importante para "
+                f"**{resultado['ticker']}**"
+            )
+            if resultado["is_anomaly_real"]:
+                intro += ", con anomalía detectada por el modelo del capítulo 5 — no es un dato menor."
+            else:
+                intro += "."
+        else:
+            intro = f"No, **{resultado['fecha']}** fue un día tranquilo para **{resultado['ticker']}**, sin evento importante registrado."
+
         texto = (
-            f"**Consulta histórica — {resultado['ticker']}, {resultado['fecha']}**\n\n"
-            f"{evento_texto} un evento importante real ese día; {anomalia_texto}.\n\n"
+            f"{intro}\n\n"
             f"- Retorno: **{resultado['log_return_real']:+.2%}**\n"
             f"- Volatilidad (20d): **{resultado['volatility_20d_real']:.2%}**\n"
             f"- Comunicaciones ese día: **{resultado['n_comunicaciones_real']}** "
@@ -447,14 +480,28 @@ def generar_respuesta_simulacion(resultado: dict):
     except Exception:
         s = resultado["sentimiento"]
         aviso_distribucion = resultado.get("aviso_distribucion")
+        antes = resultado["prediccion_antes"]["probabilidad"]
+        despues = resultado["prediccion_despues"]["probabilidad"]
+        diferencia = resultado["diferencia_probabilidad"]
+
+        if abs(diferencia) < 0.001:
+            interpretacion = (
+                "Apenas se mueve la aguja con este comunicado — algo esperable, ya que el peso de la "
+                "comunicación en el modelo es modesto frente a las condiciones de mercado."
+            )
+        elif diferencia > 0:
+            interpretacion = "La probabilidad sube con este comunicado, aunque dentro de un margen moderado."
+        else:
+            interpretacion = "La probabilidad baja ligeramente con este comunicado."
+
         texto = (
-            f"**Simulación — {resultado['ticker']}**\n\n"
+            f"He analizado el comunicado sobre **{resultado['ticker']}**: "
             f"*\"{resultado['texto_original']}\"*\n\n"
-            f"- Sentimiento detectado: **{s['etiqueta']}** "
-            f"(positiva {s['prob_positive']:.3f} · negativa {s['prob_negative']:.3f})\n"
-            f"- Probabilidad de evento importante — antes: **{resultado['prediccion_antes']['probabilidad']:.1%}** "
-            f"→ después: **{resultado['prediccion_despues']['probabilidad']:.1%}** "
-            f"({resultado['diferencia_probabilidad']:+.1%})\n\n"
+            f"El sentimiento detectado es **{s['etiqueta']}** "
+            f"(positiva {s['prob_positive']:.3f} · negativa {s['prob_negative']:.3f}). "
+            f"{interpretacion}\n\n"
+            f"- Probabilidad de evento importante — antes: **{antes:.1%}** → después: **{despues:.1%}** "
+            f"({diferencia:+.1%})\n\n"
             f"{resultado['aviso']}"
             + (f"\n\n{aviso_distribucion}" if aviso_distribucion else "")
         )
