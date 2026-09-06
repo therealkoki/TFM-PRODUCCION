@@ -84,6 +84,28 @@ def _quitar_html(texto: str) -> str:
     return re.sub(r"<div[^>]*>.*?</div>", "", texto, flags=re.DOTALL).strip()
 
 
+SUSTITUCIONES_TONO_INFORME = [
+    (r"^He analizado el comunicado sobre", "Comunicado analizado sobre"),
+    (r"^He mirado la predicción de hoy", "La predicción de hoy"),
+    (r"^Buena pregunta\s*—\s*", ""),
+    (r"^Ojo con\s+", "Cabe destacar que en "),
+    (r"^Nada llamativo hoy en\s+", "Sin variaciones relevantes en "),
+]
+
+
+def _neutralizar_tono(texto: str) -> str:
+    """
+    Limpieza ligera para cuando se usa la plantilla de reserva (Gemini no
+    disponible): sustituye las aperturas en primera persona / tono de chat,
+    ya conocidas porque las escribimos nosotros mismos en respuestas.py, por
+    una redacción más neutra propia de un informe — sin necesitar Gemini
+    para esta limpieza puntual.
+    """
+    for patron, reemplazo in SUSTITUCIONES_TONO_INFORME:
+        texto = re.sub(patron, reemplazo, texto, flags=re.MULTILINE)
+    return texto
+
+
 def _agregar_markdown_como_parrafos(document: Document, texto: str):
     """
     Traduce el subconjunto de Markdown que usan las plantillas de respuestas.py
@@ -221,12 +243,13 @@ def generar_informe_docx(conversacion: dict, ruta_salida: str) -> str:
 
         texto_redactado = _texto_seccion(titulo_seccion, intercambios)
         if texto_redactado:
-            document.add_paragraph(texto_redactado)
+            _agregar_markdown_como_parrafos(document, texto_redactado)
         else:
             # Plantilla de reserva: se reutiliza el texto que ya generó el
-            # chat (ya bien redactado y formateado), sin pasar por Gemini.
+            # chat (ya bien formateado), limpiando las aperturas en primera
+            # persona propias de una conversación antes de meterlo al informe.
             for texto, _ in intercambios:
-                _agregar_markdown_como_parrafos(document, texto)
+                _agregar_markdown_como_parrafos(document, _neutralizar_tono(texto))
 
         # Incrustar todos los gráficos distintos de esta sección, en orden.
         for _, grafico in intercambios:
