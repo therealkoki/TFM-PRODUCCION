@@ -22,6 +22,7 @@ from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 
+import plotly.graph_objects as go
 from docx import Document
 from docx.shared import Cm, Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -188,6 +189,30 @@ def _texto_seccion(titulo_seccion: str, intercambios: list) -> str:
         return None  # None indica "usar la plantilla de reserva" (ver generar_informe_docx)
 
 
+def _figura_para_informe(grafico: go.Figure) -> go.Figure:
+    """
+    Convierte un gráfico ya construido para el chat (tema oscuro, pensado
+    para una columna estrecha) en una versión "de imprenta" para el .docx:
+    fondo blanco, texto oscuro, y margen izquierdo amplio con autoajuste,
+    para que las etiquetas largas (nombres de activos/variables) no se
+    corten al exportarse a un tamaño de imagen más pequeño que en el chat.
+
+    Se trabaja sobre una copia — el gráfico original que se sigue mostrando
+    en el chat no se modifica.
+    """
+    fig = go.Figure(grafico)
+    fig.update_layout(
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=dict(color="#1F2937", size=13),
+        title_font=dict(color="#111827", size=15),
+        margin=dict(l=160, r=60, t=60, b=50),
+    )
+    fig.update_xaxes(gridcolor="#E5E7EB", color="#1F2937", automargin=True)
+    fig.update_yaxes(gridcolor="#E5E7EB", color="#1F2937", automargin=True)
+    return fig
+
+
 def generar_informe_docx(conversacion: dict, ruta_salida: str) -> str:
     """
     Genera el informe .docx a partir de una conversación y lo guarda en
@@ -246,7 +271,8 @@ def generar_informe_docx(conversacion: dict, ruta_salida: str) -> str:
             contador_imagen += 1
             ruta_imagen = ruta_imagenes_temp / f"grafico_{contador_imagen}.png"
             try:
-                grafico.write_image(str(ruta_imagen), width=900, height=450, scale=2)
+                figura_impresion = _figura_para_informe(grafico)
+                figura_impresion.write_image(str(ruta_imagen), width=1000, height=500, scale=2)
                 document.add_picture(str(ruta_imagen), width=Cm(15))
             except Exception as e:
                 _log(f"[informe.py] Fallo al exportar el gráfico {contador_imagen}: {type(e).__name__}: {e}")
