@@ -179,8 +179,14 @@ def cargar_todo():
             drive_service, CARPETA_IMPACTO_MERCADOS, "dataset_consolidado_05.csv", local_dir
         )
         resultado["dataset_consolidado_05"] = pd.read_csv(ruta, parse_dates=["date"])
+        # Fecha del dato más reciente disponible — se muestra en la interfaz
+        # para que quede claro en todo momento si los datos están al día,
+        # en vez de que el agente responda con datos viejos sin avisar si el
+        # pipeline de producción dejara de correr por cualquier motivo.
+        resultado["fecha_datos_mas_reciente"] = resultado["dataset_consolidado_05"]["date"].max()
     except FileNotFoundError as e:
         resultado["dataset_consolidado_05"] = None
+        resultado["fecha_datos_mas_reciente"] = None
         resultado["errores"].append(str(e))
 
     # --- Informes de interpretabilidad (capítulo 6, sección 9) ---
