@@ -131,11 +131,22 @@ def _agrupar_por_categoria(historial: list) -> "OrderedDict[str, list]":
     agente que tienen contenido real (categoria is not None) por esa
     categoría, conservando el orden de primera aparición de cada una.
     Cada entrada del historial es (autor, texto, grafico, categoria).
+
+    Si la misma pregunta se acabó respondiendo dos veces con el resultado
+    exacto (p. ej. porque hubo que repetirla tras un error), la segunda vez
+    se descarta — no tiene sentido que el informe repita la misma consulta
+    dos veces solo porque en el chat sí quedaron dos mensajes.
     """
     grupos = OrderedDict()
+    vistos_por_categoria = {}
     for autor, texto, grafico, categoria in historial:
         if autor != "assistant" or categoria is None:
             continue
+        texto_normalizado = _quitar_html(texto).strip()
+        vistos = vistos_por_categoria.setdefault(categoria, set())
+        if texto_normalizado in vistos:
+            continue
+        vistos.add(texto_normalizado)
         grupos.setdefault(categoria, []).append((texto, grafico))
     return grupos
 
