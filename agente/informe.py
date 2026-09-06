@@ -47,8 +47,9 @@ def _asegurar_chrome_para_kaleido():
     try:
         import kaleido
         kaleido.get_chrome_sync()
-    except Exception:
-        pass
+        print("[informe.py] Chrome para kaleido: descarga/verificación completada sin errores.")
+    except Exception as e:
+        print(f"[informe.py] No se pudo asegurar Chrome para kaleido: {type(e).__name__}: {e}")
     _CHROME_ASEGURADO = True
 
 SECCIONES_INFORME = {
@@ -260,8 +261,8 @@ def generar_informe_docx(conversacion: dict, ruta_salida: str) -> str:
             try:
                 grafico.write_image(str(ruta_imagen), width=900, height=450, scale=2)
                 document.add_picture(str(ruta_imagen), width=Cm(15))
-            except Exception:
-                pass  # Si falla la exportación de un gráfico concreto, se sigue sin él.
+            except Exception as e:
+                print(f"[informe.py] Fallo al exportar el gráfico {contador_imagen}: {type(e).__name__}: {e}")
 
         document.add_paragraph()
 
