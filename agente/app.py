@@ -446,8 +446,20 @@ with st.sidebar:
     st.divider()
     st.caption("TFM — Impacto de comunicaciones públicas en mercados financieros")
 
-with st.spinner("Cargando datos del TFM desde Drive..."):
-    datos = cargar_todo()
+try:
+    with st.spinner("Cargando datos del TFM desde Drive..."):
+        datos = cargar_todo()
+except Exception:
+    st.error(
+        "No se ha podido conectar con Google Drive para cargar los datos del TFM. "
+        "Puede ser un problema temporal de configuración (por ejemplo, una credencial "
+        "caducada). Probad a recargar la página en unos minutos; si el problema persiste, "
+        "contactad con el equipo del TFM."
+    )
+    st.stop()
+
+if datos.get("fecha_datos_mas_reciente") is not None:
+    st.caption(f"Datos de mercado actualizados hasta: {datos['fecha_datos_mas_reciente'].strftime('%d/%m/%Y')}")
 
 if datos["errores"]:
     with st.expander("Algunos archivos no se pudieron cargar (el agente seguirá funcionando con lo disponible)"):
