@@ -10,8 +10,8 @@ numpy
 joblib
 scikit-learn
 lightgbm
-plotly
-kaleido
+plotly==5.24.1
+kaleido==0.2.1
 python-docx
 
 # Acceso a Drive (mismas versiones que ya usa el repo de producción)
