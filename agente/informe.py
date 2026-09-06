@@ -75,7 +75,8 @@ def _quitar_html(texto: str) -> str:
 
 SUSTITUCIONES_TONO_INFORME = [
     (r"^He analizado el comunicado sobre", "Comunicado analizado sobre"),
-    (r"^He mirado la predicción de hoy", "La predicción de hoy"),
+    (r"^He mirado la predicción de hoy para los (\d+) activos y el panorama está",
+     r"La predicción de hoy para los \1 activos refleja un panorama"),
     (r"^Buena pregunta\s*—\s*", ""),
     (r"^Ojo con\s+", "Cabe destacar que en "),
     (r"^Nada llamativo hoy en\s+", "Sin variaciones relevantes en "),
@@ -109,11 +110,18 @@ def _agregar_markdown_como_parrafos(document: Document, texto: str):
         es_bullet = linea.startswith("- ")
         contenido = linea[2:].strip() if es_bullet else linea
         parrafo = document.add_paragraph(style="List Bullet" if es_bullet else "Normal")
-        partes = re.split(r"(\*\*[^*]+\*\*)", contenido)
+        partes = re.split(r"(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)", contenido)
         for parte in partes:
+            if not parte:
+                continue
             if parte.startswith("**") and parte.endswith("**"):
                 parrafo.add_run(parte[2:-2]).bold = True
-            elif parte:
+            elif parte.startswith("`") and parte.endswith("`"):
+                run = parrafo.add_run(parte[1:-1])
+                run.font.name = "Consolas"
+            elif parte.startswith("*") and parte.endswith("*"):
+                parrafo.add_run(parte[1:-1]).italic = True
+            else:
                 parrafo.add_run(parte)
 
 
