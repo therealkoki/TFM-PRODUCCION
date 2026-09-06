@@ -17,6 +17,7 @@ falla, aunque Gemini no esté disponible.
 
 import os
 import re
+import sys
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
@@ -29,6 +30,16 @@ GEMINI_MODEL = "gemini-flash-latest"
 TIMEOUT_GEMINI_SEGUNDOS = 20
 
 _CHROME_ASEGURADO = False
+
+# Mensajes de diagnóstico recogidos durante la generación del informe (además
+# de imprimirse a los logs) — para poder mostrarlos directamente en la propia
+# app, sin depender de si Streamlit Cloud captura bien los prints o no.
+DIAGNOSTICO = []
+
+
+def _log(mensaje: str):
+    DIAGNOSTICO.append(mensaje)
+    print(mensaje, file=sys.stderr, flush=True)
 
 
 def _asegurar_chrome_para_kaleido():
@@ -47,9 +58,9 @@ def _asegurar_chrome_para_kaleido():
     try:
         import kaleido
         kaleido.get_chrome_sync()
-        print("[informe.py] Chrome para kaleido: descarga/verificación completada sin errores.")
+        _log("[informe.py] Chrome para kaleido: descarga/verificación completada sin errores.")
     except Exception as e:
-        print(f"[informe.py] No se pudo asegurar Chrome para kaleido: {type(e).__name__}: {e}")
+        _log(f"[informe.py] No se pudo asegurar Chrome para kaleido: {type(e).__name__}: {e}")
     _CHROME_ASEGURADO = True
 
 SECCIONES_INFORME = {
@@ -210,6 +221,7 @@ def generar_informe_docx(conversacion: dict, ruta_salida: str) -> str:
     if not grupos:
         raise ValueError("Esta conversación no tiene todavía contenido con datos reales que exportar.")
 
+    DIAGNOSTICO.clear()
     _asegurar_chrome_para_kaleido()
 
     document = Document()
@@ -262,7 +274,7 @@ def generar_informe_docx(conversacion: dict, ruta_salida: str) -> str:
                 grafico.write_image(str(ruta_imagen), width=900, height=450, scale=2)
                 document.add_picture(str(ruta_imagen), width=Cm(15))
             except Exception as e:
-                print(f"[informe.py] Fallo al exportar el gráfico {contador_imagen}: {type(e).__name__}: {e}")
+                _log(f"[informe.py] Fallo al exportar el gráfico {contador_imagen}: {type(e).__name__}: {e}")
 
         document.add_paragraph()
 
