@@ -23,6 +23,7 @@ aparte en la memoria o la defensa.)
 import streamlit as st
 
 from carga_datos import ACTIVOS_CON_EVIDENCIA, cargar_modelo_sentimiento, cargar_todo
+import informe
 from informe import generar_informe_docx, hay_contenido_exportable
 from respuestas import (
     generar_respuesta_consulta_historica,
@@ -419,12 +420,19 @@ with st.sidebar:
                     with open(ruta, "rb") as f:
                         st.session_state.informe_generado = f.read()
                     st.session_state.informe_error = None
+                    st.session_state.informe_diagnostico = list(informe.DIAGNOSTICO)
                 except Exception as e:
                     st.session_state.informe_generado = None
                     st.session_state.informe_error = f"No se pudo generar el informe: {e}"
+                    st.session_state.informe_diagnostico = list(informe.DIAGNOSTICO)
 
     if st.session_state.get("informe_error"):
         st.warning(st.session_state.informe_error)
+
+    if st.session_state.get("informe_diagnostico"):
+        with st.expander("Diagnóstico técnico del último informe generado"):
+            for linea in st.session_state.informe_diagnostico:
+                st.write(linea)
 
     if st.session_state.get("informe_generado"):
         st.download_button(
