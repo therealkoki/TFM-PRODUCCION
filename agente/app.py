@@ -473,17 +473,14 @@ with col_chat:
                 respuesta, grafico, categoria = _procesar_mensaje(mensaje, datos, conversacion)
             conversacion["historial"].append(("assistant", respuesta, grafico, categoria))
 
-        for autor, texto, grafico, categoria in conversacion["historial"]:
+        for indice, (autor, texto, grafico, categoria) in enumerate(conversacion["historial"]):
             with st.chat_message(autor):
-                # unsafe_allow_html=True: necesario para que los avisos legales
-                # se vean como párrafo aparte en gris (ver _aviso_html en
-                # respuestas.py). Riesgo aceptado: cada sesión es privada (no
-                # hay usuarios compartiendo la misma vista), y los prompts de
-                # Gemini ya incluyen una defensa explícita contra instrucciones
-                # escondidas que intenten hacerle generar HTML arbitrario.
                 st.markdown(texto, unsafe_allow_html=True)
                 if grafico is not None:
-                    st.plotly_chart(grafico, use_container_width=True, config={"displayModeBar": False})
+                    st.plotly_chart(
+                        grafico, use_container_width=True, config={"displayModeBar": False},
+                        key=f"grafico_{st.session_state.conversacion_activa}_{indice}",
+                    )
 
         if not conversacion["historial"]:
             st.info("Empieza escribiendo una pregunta abajo, o usa uno de los botones de preguntas rápidas.")
