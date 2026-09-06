@@ -29,8 +29,6 @@ from docx.enum.text import WD_ALIGN_PARAGRAPH
 GEMINI_MODEL = "gemini-flash-latest"
 TIMEOUT_GEMINI_SEGUNDOS = 20
 
-_CHROME_ASEGURADO = False
-
 # Mensajes de diagnóstico recogidos durante la generación del informe (además
 # de imprimirse a los logs) — para poder mostrarlos directamente en la propia
 # app, sin depender de si Streamlit Cloud captura bien los prints o no.
@@ -40,28 +38,6 @@ DIAGNOSTICO = []
 def _log(mensaje: str):
     DIAGNOSTICO.append(mensaje)
     print(mensaje, file=sys.stderr, flush=True)
-
-
-def _asegurar_chrome_para_kaleido():
-    """
-    Las versiones actuales de kaleido (necesarias para exportar los gráficos
-    de Plotly como imágenes PNG dentro del .docx) requieren tener Chrome
-    disponible — no lo traen integrado como versiones antiguas. Se intenta
-    descargar una sola vez por sesión de la app; si falla (sin conexión,
-    permisos, etc.), no se lanza ningún error aquí — cada gráfico ya maneja
-    su propio fallo por separado más adelante, y el informe se genera
-    igualmente sin esa imagen concreta en vez de fallar del todo.
-    """
-    global _CHROME_ASEGURADO
-    if _CHROME_ASEGURADO:
-        return
-    try:
-        import kaleido
-        kaleido.get_chrome_sync()
-        _log("[informe.py] Chrome para kaleido: descarga/verificación completada sin errores.")
-    except Exception as e:
-        _log(f"[informe.py] No se pudo asegurar Chrome para kaleido: {type(e).__name__}: {e}")
-    _CHROME_ASEGURADO = True
 
 SECCIONES_INFORME = {
     "predicciones_hoy": "Predicción del modelo",
@@ -222,7 +198,6 @@ def generar_informe_docx(conversacion: dict, ruta_salida: str) -> str:
         raise ValueError("Esta conversación no tiene todavía contenido con datos reales que exportar.")
 
     DIAGNOSTICO.clear()
-    _asegurar_chrome_para_kaleido()
 
     document = Document()
 
